@@ -4,10 +4,10 @@ const nextConfig = {
   eslint: {
     ignoreDuringBuilds: true,
   },
-  // 2. Ignorar errores de Tipado (TypeScript/JSDoc) -> ¡Esto suele ser el culpable!
+  // 2. Ignorar errores de Tipado (TypeScript)
   typescript: {
     ignoreBuildErrors: true,
   },
 };
 
-module.exports = nextConfig;
+export default nextConfig;
