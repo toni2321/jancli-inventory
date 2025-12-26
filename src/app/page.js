@@ -3,22 +3,41 @@
 import { useEffect, useState } from 'react';
 import { supabase } from '@/lib/supabase';
 import Link from 'next/link';
-import { useRouter } from 'next/navigation'; // <--- IMPORTANTE: Importamos el router
+import { useRouter } from 'next/navigation';
 
 export default function Home() {
-  const router = useRouter(); // Inicializamos el router
+  const router = useRouter();
   
+  // --- ESTADOS DE DATOS ---
   const [products, setProducts] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [user, setUser] = useState(null);
+
+  // --- ESTADOS DE INTERFAZ ---
   const [selectedImage, setSelectedImage] = useState(null);
   const [searchTerm, setSearchTerm] = useState("");
   
-  // ESTADO NUEVO: Para saber quién es el usuario conectado
-  const [user, setUser] = useState(null);
+  // --- ESTADOS DEL CARRITO (NUEVO) ---
+  const [cart, setCart] = useState([]); 
+  const [isProcessing, setIsProcessing] = useState(false); // Para bloquear botón mientras cobra
 
-  // Definimos esta función ANTES del useEffect para que no dé errores
+  // 1. CARGA INICIAL Y SEGURIDAD
+  useEffect(() => {
+    const checkUser = async () => {
+      const { data: { session } } = await supabase.auth.getSession();
+      
+      if (!session) {
+        router.push('/login');
+      } else {
+        setUser(session.user);
+        fetchProducts();
+      }
+    };
+    checkUser();
+  }, [router]);
+
   const fetchProducts = async () => {
-    const { data, error } = await supabase
+    const { data } = await supabase
       .from('products')
       .select('*')
       .order('created_at', { ascending: false });
@@ -27,39 +46,16 @@ export default function Home() {
     setLoading(false);
   };
 
-  // 1. EL GUARDIÁN DE SEGURIDAD (Auth Check)
-  useEffect(() => {
-    const checkUser = async () => {
-      // Preguntamos a Supabase si hay alguien logueado
-      const { data: { session } } = await supabase.auth.getSession();
-      
-      if (!session) {
-        // Si NO hay sesión, nos manda a la pantalla de Login
-        router.push('/login');
-      } else {
-        // Si SÍ hay sesión, guardamos el usuario y cargamos los productos
-        setUser(session.user);
-        fetchProducts();
-      }
-    };
-    
-    checkUser();
-  }, [router]);
-
-  // Función para Cerrar Sesión
   const handleLogout = async () => {
-    await supabase.auth.signOut(); // Borra la sesión de Supabase
-    router.push('/login'); // Nos regresa al login
+    await supabase.auth.signOut();
+    router.push('/login');
   };
 
   const handleDelete = async (id) => {
     const confirmacion = window.confirm("¿Seguro que quieres borrar este producto?");
     if (!confirmacion) return;
 
-    const { error } = await supabase
-      .from('products')
-      .delete()
-      .eq('id', id);
+    const { error } = await supabase.from('products').delete().eq('id', id);
 
     if (error) {
       alert('Error al borrar');
@@ -68,95 +64,156 @@ export default function Home() {
     }
   };
 
-  // --- LÓGICA DEL BUSCADOR ---
+  // ==========================================
+  // LÓGICA DEL CARRITO Y VENTAS (LO NUEVO)
+  // ==========================================
+
+  // A. Agregar producto al carrito
+  const addToCart = (product) => {
+    setCart(currentCart => {
+      // ¿Ya existe en el carrito?
+      const existingItem = currentCart.find(item => item.id === product.id);
+      
+      if (existingItem) {
+        // Verificar que no superemos el stock disponible
+        if (existingItem.cartQuantity >= product.stock_quantity) {
+          alert("¡No hay suficiente stock para agregar más!");
+          return currentCart;
+        }
+        // Si hay stock, sumamos 1
+        return currentCart.map(item => 
+          item.id === product.id 
+            ? { ...item, cartQuantity: item.cartQuantity + 1 }
+            : item
+        );
+      } else {
+        // Si es nuevo en el carrito
+        if (product.stock_quantity < 1) {
+          alert("Producto Agotado");
+          return currentCart;
+        }
+        return [...currentCart, { ...product, cartQuantity: 1 }];
+      }
+    });
+  };
+
+  // B. Quitar producto del carrito
+  const removeFromCart = (productId) => {
+    setCart(currentCart => currentCart.filter(item => item.id !== productId));
+  };
+
+  // C. Calcular Total ($)
+  const cartTotal = cart.reduce((total, item) => total + (item.price * item.cartQuantity), 0);
+
+  // D. PROCESAR VENTA (Guardar y Descontar Stock)
+  const processSale = async () => {
+    if (cart.length === 0) return;
+    setIsProcessing(true);
+
+    try {
+      // 1. Crear el ticket de venta en la tabla 'sales'
+      const { data: saleData, error: saleError } = await supabase
+        .from('sales')
+        .insert([{ 
+          total: cartTotal, 
+          user_email: user?.email 
+        }])
+        .select()
+        .single();
+
+      if (saleError) throw saleError;
+
+      // 2. Procesar cada item del carrito
+      for (const item of cart) {
+        // Guardar detalle en 'sale_items'
+        await supabase.from('sale_items').insert([{
+          sale_id: saleData.id,
+          product_id: item.id,
+          product_name: item.name,
+          quantity: item.cartQuantity,
+          price: item.price
+        }]);
+
+        // --- AQUÍ OCURRE EL DESCUENTO DE STOCK ---
+        const newStock = item.stock_quantity - item.cartQuantity;
+        await supabase
+          .from('products')
+          .update({ stock_quantity: newStock })
+          .eq('id', item.id);
+      }
+
+      // 3. Finalizar
+      alert("¡Venta realizada con éxito! 💰");
+      setCart([]); // Limpiar carrito
+      fetchProducts(); // Recargar productos para ver el stock actualizado
+
+    } catch (error) {
+      console.error(error);
+      alert("Error al procesar la venta: " + error.message);
+    } finally {
+      setIsProcessing(false);
+    }
+  };
+
+  // --- FILTRADO ---
   const filteredProducts = products.filter(product => 
     product.name.toLowerCase().includes(searchTerm.toLowerCase())
   );
-  // ---------------------------
 
-  // Mientras carga o verifica usuario, mostramos esto
-  if (loading) return <div className="min-h-screen bg-gray-50 flex items-center justify-center text-gray-500">Verificando acceso...</div>;
+  if (loading) return <div className="min-h-screen bg-gray-50 flex items-center justify-center text-gray-500">Cargando sistema...</div>;
 
   return (
-    <div className="min-h-screen bg-gray-50 p-8 font-sans">
+    // Cambiamos a Flex Row para tener 2 columnas en pantallas grandes
+    <div className="min-h-screen bg-gray-50 p-4 md:p-8 font-sans flex flex-col md:flex-row gap-6">
       
-      {/* HEADER CON INFO DE USUARIO Y LOGOUT */}
-      <header className="mb-8 flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
-        <div>
-          <h1 className="text-3xl font-bold text-gray-900 tracking-tight">Inventario JANCLI</h1>
-          {/* Aquí mostramos el email del usuario y el botón de salir */}
-          <div className="flex items-center gap-2 text-sm text-gray-500 mt-1">
-             <span>Hola, {user?.email}</span>
-             <button 
-               onClick={handleLogout} 
-               className="text-red-500 hover:text-red-700 font-bold text-xs border border-red-200 px-2 py-0.5 rounded hover:bg-red-50 transition"
-             >
-               Salir
-             </button>
+      {/* ========================================= */}
+      {/* COLUMNA IZQUIERDA: INVENTARIO (Tu código anterior) */}
+      {/* ========================================= */}
+      <div className="flex-1">
+        
+        {/* HEADER */}
+        <header className="mb-6 flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
+          <div>
+            <h1 className="text-3xl font-bold text-gray-900 tracking-tight">Inventario JANCLI</h1>
+            <div className="flex items-center gap-2 text-sm text-gray-500 mt-1">
+               <span>Hola, {user?.email}</span>
+               <button 
+                 onClick={handleLogout} 
+                 className="text-red-500 hover:text-red-700 font-bold text-xs border border-red-200 px-2 py-0.5 rounded hover:bg-red-50 transition"
+               >
+                 Salir
+               </button>
+            </div>
           </div>
-        </div>
 
-        <div className="flex gap-4 w-full md:w-auto">
-          {/* Barra de Búsqueda */}
-          <div className="relative flex-grow md:flex-grow-0">
+          <div className="flex gap-3 w-full md:w-auto">
             <input 
               type="text" 
               placeholder="Buscar producto..." 
-              className="w-full md:w-64 border border-gray-300 rounded-lg py-2 pl-10 pr-4 focus:ring-2 focus:ring-black focus:outline-none text-gray-700"
+              className="w-full md:w-48 border border-gray-300 rounded-lg py-2 pl-3 pr-4 focus:ring-2 focus:ring-black focus:outline-none text-gray-700"
               onChange={(e) => setSearchTerm(e.target.value)}
             />
-            {/* Lupa Icono */}
-            <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5 text-gray-400 absolute left-3 top-2.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
-            </svg>
+            <Link 
+              href="/new" 
+              className="bg-black text-white px-4 py-2 rounded-lg hover:bg-gray-800 transition font-medium shadow-md whitespace-nowrap text-sm flex items-center"
+            >
+              + Nuevo
+            </Link>
           </div>
+        </header>
 
-          <Link 
-            href="/new" 
-            className="bg-black text-white px-5 py-2 rounded-lg hover:bg-gray-800 transition font-medium shadow-md whitespace-nowrap"
-          >
-            + Nuevo
-          </Link>
-        </div>
-      </header>
-
-      <main>
+        {/* GRID DE PRODUCTOS */}
         {filteredProducts.length === 0 ? (
           <div className="text-center py-20 bg-white rounded-xl border border-dashed border-gray-300">
-            {searchTerm ? (
-               <p className="text-gray-500">No se encontraron productos con "{searchTerm}".</p>
-            ) : (
-               <p className="text-gray-500">No hay productos en el inventario.</p>
-            )}
+            <p className="text-gray-500">No se encontraron productos.</p>
           </div>
         ) : (
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
             {filteredProducts.map((product) => (
-              <div key={product.id} className="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden hover:shadow-md transition duration-200 group relative flex flex-col">
+              <div key={product.id} className="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden hover:shadow-md transition duration-200 flex flex-col">
                 
-                <div className="absolute top-3 right-3 flex gap-2 z-10">
-                  <Link
-                    href={`/edit/${product.id}`}
-                    className="bg-white/90 p-2 rounded-full shadow-sm text-gray-500 hover:text-blue-600 hover:bg-white transition backdrop-blur-sm"
-                    title="Editar"
-                  >
-                    <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-                      <path strokeLinecap="round" strokeLinejoin="round" d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z" />
-                    </svg>
-                  </Link>
-
-                  <button 
-                    onClick={() => handleDelete(product.id)}
-                    className="bg-white/90 p-2 rounded-full shadow-sm text-gray-500 hover:text-red-500 hover:bg-white transition backdrop-blur-sm"
-                    title="Eliminar"
-                  >
-                    <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-                      <path strokeLinecap="round" strokeLinejoin="round" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
-                    </svg>
-                  </button>
-                </div>
-
-                <div className="h-56 w-full bg-gray-100 flex items-center justify-center relative overflow-hidden">
+                {/* Imagen y Botones Flotantes */}
+                <div className="h-40 relative bg-gray-100">
                    {product.image_url ? (
                      <img 
                        src={product.image_url} 
@@ -165,70 +222,139 @@ export default function Home() {
                        className="w-full h-full object-cover cursor-pointer hover:scale-105 transition duration-500"
                      />
                    ) : (
-                     <div className="text-gray-300 flex flex-col items-center">
-                        <svg xmlns="http://www.w3.org/2000/svg" className="h-10 w-10 mb-2" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1} d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" />
-                        </svg>
-                        <span className="text-xs font-medium">Sin Imagen</span>
-                     </div>
+                     <div className="w-full h-full flex items-center justify-center text-gray-300 text-xs">Sin Imagen</div>
                    )}
+                   
+                   {/* Botones Editar/Borrar (Pequeños en la esquina) */}
+                   <div className="absolute top-2 right-2 flex gap-1 z-10">
+                     <Link href={`/edit/${product.id}`} className="bg-white/90 p-1.5 rounded-full shadow hover:text-blue-600 text-gray-500">
+                       ✏️
+                     </Link>
+                     <button onClick={() => handleDelete(product.id)} className="bg-white/90 p-1.5 rounded-full shadow hover:text-red-500 text-gray-500">
+                       🗑️
+                     </button>
+                   </div>
                 </div>
 
-                <div className="p-5 border-b border-gray-100">
-                  <h2 className="font-bold text-lg text-gray-800 pr-8 line-clamp-1">{product.name}</h2>
-                  <p className="text-xs text-gray-400 mt-1">ID: {product.id.slice(0, 8)}</p>
-                </div>
-
-                <div className="p-5 bg-gray-50/50 flex-grow">
-                  <div className="flex justify-between items-center mb-4">
-                    <span className="text-2xl font-bold text-gray-900">${product.price}</span>
-                    <div className={`px-2 py-1 rounded text-xs font-bold ${product.stock_quantity < 5 ? 'bg-red-100 text-red-700' : 'bg-green-100 text-green-700'}`}>
+                {/* Info del Producto */}
+                <div className="p-3 flex flex-col flex-grow">
+                  <div className="flex justify-between items-start mb-1">
+                    <h2 className="font-bold text-gray-800 line-clamp-1 text-sm">{product.name}</h2>
+                    <span className={`px-1.5 py-0.5 rounded text-[10px] font-bold ${product.stock_quantity < 5 ? 'bg-red-100 text-red-700' : 'bg-green-100 text-green-700'}`}>
                       Stock: {product.stock_quantity}
-                    </div>
+                    </span>
+                  </div>
+                  
+                  <div className="text-xs text-gray-400 mb-2 flex gap-2">
+                    <span>{product.attributes?.talla}</span>
+                    <span>{product.attributes?.color}</span>
                   </div>
 
-                  <div className="grid grid-cols-2 gap-2 text-sm">
-                    <div className="bg-white p-2 rounded border border-gray-100">
-                      <span className="block text-xs text-gray-400 font-bold uppercase">Talla</span>
-                      {product.attributes?.talla || '-'}
-                    </div>
-                    <div className="bg-white p-2 rounded border border-gray-100">
-                      <span className="block text-xs text-gray-400 font-bold uppercase">Color</span>
-                      {product.attributes?.color || '-'}
-                    </div>
+                  <div className="mt-auto flex justify-between items-center pt-2 border-t border-gray-100">
+                    <span className="text-lg font-bold text-gray-900">${product.price}</span>
+                    
+                    {/* BOTÓN VENDER (NUEVO) */}
+                    <button 
+                      onClick={() => addToCart(product)}
+                      disabled={product.stock_quantity === 0}
+                      className="bg-black text-white px-3 py-1.5 rounded-lg text-xs font-bold hover:bg-gray-800 disabled:opacity-50 disabled:cursor-not-allowed active:scale-95 transition"
+                    >
+                      {product.stock_quantity === 0 ? 'Agotado' : '+ Agregar'}
+                    </button>
                   </div>
                 </div>
               </div>
             ))}
           </div>
         )}
+      </div>
 
-        {/* MODAL DE ZOOM */}
-        {selectedImage && (
-          <div 
-            className="fixed inset-0 bg-black/90 z-50 flex items-center justify-center p-4 backdrop-blur-sm animate-in fade-in duration-200"
-            onClick={() => setSelectedImage(null)}
-          >
-            <div className="relative max-w-4xl w-full max-h-screen flex flex-col items-center">
-              <button 
-                onClick={() => setSelectedImage(null)}
-                className="absolute -top-12 right-0 text-white hover:text-gray-300 p-2"
-              >
-                <svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-                  <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
-                </svg>
-              </button>
-              <img 
-                src={selectedImage} 
-                alt="Zoom Producto" 
-                className="max-h-[85vh] max-w-full rounded-lg shadow-2xl object-contain"
-                onClick={(e) => e.stopPropagation()} 
-              />
-            </div>
+      {/* ========================================= */}
+      {/* COLUMNA DERECHA: EL CARRITO (Sidebar) */}
+      {/* ========================================= */}
+      <div className="w-full md:w-80 bg-white rounded-xl shadow-xl border border-gray-200 p-5 h-fit sticky top-4 flex flex-col z-20">
+        <h2 className="text-xl font-bold mb-4 flex items-center gap-2 text-gray-900 border-b pb-2 border-gray-100">
+          🛒 Carrito de Venta
+        </h2>
+
+        {cart.length === 0 ? (
+          <div className="text-center py-10 text-gray-400 text-sm border-2 border-dashed border-gray-100 rounded-lg bg-gray-50">
+            <p>El carrito está vacío.</p>
+            <p className="text-xs mt-1">Agrega productos del inventario.</p>
+          </div>
+        ) : (
+          <div className="flex-grow space-y-3 mb-6 max-h-[50vh] overflow-y-auto pr-1 custom-scrollbar">
+            {cart.map(item => (
+              <div key={item.id} className="flex justify-between items-center text-sm border-b border-gray-50 pb-2 animate-in slide-in-from-left-2 duration-300">
+                <div>
+                  <p className="font-bold text-gray-800 line-clamp-1">{item.name}</p>
+                  <p className="text-gray-500 text-xs">
+                    {item.cartQuantity} x ${item.price}
+                  </p>
+                </div>
+                <div className="flex items-center gap-3">
+                  <span className="font-bold text-gray-900">${item.price * item.cartQuantity}</span>
+                  <button 
+                    onClick={() => removeFromCart(item.id)} 
+                    className="text-gray-400 hover:text-red-500 font-bold px-1 transition"
+                  >
+                    ✕
+                  </button>
+                </div>
+              </div>
+            ))}
           </div>
         )}
 
-      </main>
+        {/* Totales y Botón Pagar */}
+        <div className="mt-auto pt-2">
+          <div className="flex justify-between items-center text-lg font-bold mb-4 text-gray-900">
+            <span>Total:</span>
+            <span>${cartTotal.toFixed(2)}</span>
+          </div>
+          
+          <button 
+            onClick={processSale}
+            disabled={cart.length === 0 || isProcessing}
+            className="w-full bg-green-600 text-white py-3 rounded-lg font-bold hover:bg-green-700 shadow-md disabled:opacity-50 disabled:cursor-not-allowed transition flex justify-center items-center gap-2"
+          >
+            {isProcessing ? (
+              <span>Procesando... ⏳</span>
+            ) : (
+              <>
+                <span>Cobrar Venta</span>
+                <span>✅</span>
+              </>
+            )}
+          </button>
+        </div>
+      </div>
+
+      {/* MODAL DE ZOOM (Mantenemos tu código) */}
+      {selectedImage && (
+        <div 
+          className="fixed inset-0 bg-black/90 z-50 flex items-center justify-center p-4 backdrop-blur-sm animate-in fade-in duration-200"
+          onClick={() => setSelectedImage(null)}
+        >
+          <div className="relative max-w-4xl w-full max-h-screen flex flex-col items-center">
+            <button 
+              onClick={() => setSelectedImage(null)}
+              className="absolute -top-12 right-0 text-white hover:text-gray-300 p-2"
+            >
+              <svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
+              </svg>
+            </button>
+            <img 
+              src={selectedImage} 
+              alt="Zoom Producto" 
+              className="max-h-[85vh] max-w-full rounded-lg shadow-2xl object-contain"
+              onClick={(e) => e.stopPropagation()} 
+            />
+          </div>
+        </div>
+      )}
+
     </div>
   );
 }
