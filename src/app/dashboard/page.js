@@ -119,6 +119,7 @@ export default function Dashboard() {
           📜 Ver Historial Completo y Reimprimir
         </Link>
       </div>
+      
       {/* --- SECCIÓN DE HISTORIAL RECIENTE --- */}
       <div className="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden">
         <div className="px-6 py-4 border-b border-gray-100 bg-gray-50/50">
