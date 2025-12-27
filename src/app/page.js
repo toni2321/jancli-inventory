@@ -295,22 +295,41 @@ export default function Home() {
       {/* IZQUIERDA: INVENTARIO */}
       <div className="flex-1">
         <header className="mb-6 flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
-          <div>
-            <h1 className="text-3xl font-bold text-gray-900 tracking-tight">Inventario JANCLI</h1>
-            <div className="flex items-center gap-2 text-sm text-gray-500 mt-1">
-               <span>Hola, {user?.email}</span>
-               <button onClick={handleLogout} className="text-red-500 font-bold hover:underline px-1">(Salir)</button>
-            </div>
+        
+        {/* PARTE IZQUIERDA: Título y Usuario (La que me pasaste) */}
+        <div>
+          <h1 className="text-3xl font-bold text-gray-900 tracking-tight">Inventario JANCLI</h1>
+          <div className="flex items-center gap-2 text-sm text-gray-500 mt-1">
+             <span>Hola, {user?.email}</span>
+             <button onClick={handleLogout} className="text-red-500 font-bold hover:underline px-1">(Salir)</button>
           </div>
-          <div className="flex gap-3 w-full md:w-auto">
-            <input 
-              type="text" placeholder="Buscar..." 
-              className="w-full md:w-48 border border-gray-300 rounded-lg py-2 px-3 focus:ring-2 focus:ring-black focus:outline-none"
-              onChange={(e) => setSearchTerm(e.target.value)}
-            />
-            <Link href="/new" className="bg-black text-white px-4 py-2 rounded-lg hover:bg-gray-800 transition shadow-md flex items-center">+ Nuevo</Link>
-          </div>
-        </header>
+        </div>
+
+        {/* PARTE DERECHA: Buscador + Botones de Acción */}
+        <div className="flex flex-col sm:flex-row gap-3 w-full md:w-auto">
+          <input 
+            type="text" 
+            placeholder="Buscar..." 
+            className="w-full md:w-48 border border-gray-300 rounded-lg py-2 px-3 focus:ring-2 focus:ring-black focus:outline-none text-gray-700"
+            onChange={(e) => setSearchTerm(e.target.value)}
+          />
+
+          {/* --- AQUÍ ESTÁ EL NUEVO BOTÓN DASHBOARD --- */}
+          <Link 
+            href="/dashboard" 
+            className="bg-white text-gray-700 border border-gray-300 px-4 py-2 rounded-lg hover:bg-gray-100 transition font-medium shadow-sm whitespace-nowrap text-sm flex items-center justify-center gap-2"
+          >
+            📊 Ver Ganancias
+          </Link>
+
+          <Link 
+            href="/new" 
+            className="bg-black text-white px-4 py-2 rounded-lg hover:bg-gray-800 transition shadow-md flex items-center justify-center whitespace-nowrap text-sm"
+          >
+            + Nuevo
+          </Link>
+        </div>
+      </header>
 
         {filteredProducts.length === 0 ? (
           <div className="text-center py-20 bg-white rounded-xl border border-dashed border-gray-300 text-gray-400">Sin productos.</div>
