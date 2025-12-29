@@ -6,10 +6,11 @@ import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 
 // ==========================================
-// 1. COMPONENTE: TARJETA DE PRODUCTO (MEJORA VISUAL INPUT)
+// 1. COMPONENTE: TARJETA DE PRODUCTO (ACTUALIZADO CON ARCHIVAR)
 // ==========================================
-function ProductCard({ product, onAddToCart, onDelete, onImageClick }) {
+function ProductCard({ product, onAddToCart, onToggleStatus, onImageClick }) {
   const [qtyToAdd, setQtyToAdd] = useState(1);
+  const isActive = product.is_active; // Verificamos si está activo
 
   const handleQtyChange = (e) => {
     const inputValue = e.target.value;
@@ -26,7 +27,7 @@ function ProductCard({ product, onAddToCart, onDelete, onImageClick }) {
   };
 
   return (
-    <div className="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden hover:shadow-md transition duration-200 flex flex-col">
+    <div className={`bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden hover:shadow-md transition duration-200 flex flex-col ${!isActive ? 'opacity-60 grayscale bg-gray-50' : ''}`}>
       {/* Imagen */}
       <div className="h-40 relative bg-gray-100">
         {product.image_url ? (
@@ -41,7 +42,15 @@ function ProductCard({ product, onAddToCart, onDelete, onImageClick }) {
         )}
         <div className="absolute top-2 right-2 flex gap-1 z-10">
           <Link href={`/edit/${product.id}`} className="bg-white/90 p-1.5 rounded-full shadow hover:text-blue-600 text-gray-500">✏️</Link>
-          <button onClick={() => onDelete(product.id)} className="bg-white/90 p-1.5 rounded-full shadow hover:text-red-500 text-gray-500">🗑️</button>
+          
+          {/* BOTÓN INTELIGENTE: ARCHIVAR O REACTIVAR */}
+          <button 
+            onClick={() => onToggleStatus(product)} 
+            className={`bg-white/90 p-1.5 rounded-full shadow transition ${isActive ? 'hover:text-red-500 text-gray-500' : 'hover:text-green-600 text-green-600'}`}
+            title={isActive ? "Archivar (Papelera)" : "Reactivar"}
+          >
+            {isActive ? '🗑️' : '♻️'}
+          </button>
         </div>
       </div>
 
@@ -62,39 +71,46 @@ function ProductCard({ product, onAddToCart, onDelete, onImageClick }) {
         <div className="mt-auto pt-2 border-t border-gray-100">
           <div className="flex justify-between items-center mb-2">
             <span className="text-lg font-bold text-gray-900">${product.price}</span>
+            {!isActive && <span className="text-[10px] font-bold border border-gray-400 px-1 rounded text-gray-500">ARCHIVADO</span>}
           </div>
 
-          {/* ZONA DE AGREGAR (INPUT MEJORADO) */}
-          <div className="flex gap-2">
-            <input 
-              type="number" 
-              min="1" 
-              max={product.stock_quantity}
-              value={qtyToAdd}
-              onChange={handleQtyChange}
-              onBlur={() => { if (qtyToAdd === "") setQtyToAdd(1); }}
-              disabled={product.stock_quantity === 0}
-              // AQUÍ ESTÁN LOS CAMBIOS DE CLASES CSS:
-              className="w-14 border border-gray-400 bg-white text-gray-900 font-bold rounded text-center text-sm focus:ring-2 focus:ring-black focus:outline-none placeholder-gray-500 shadow-sm"
-            />
-            <button 
-              onClick={() => {
-                onAddToCart(product, Number(qtyToAdd) || 1);
-                setQtyToAdd(1); 
-              }}
-              disabled={product.stock_quantity === 0}
-              className="flex-1 bg-black text-white py-1.5 rounded-lg text-xs font-bold hover:bg-gray-800 disabled:opacity-50 disabled:cursor-not-allowed active:scale-95 transition shadow-sm"
-            >
-              {product.stock_quantity === 0 ? 'Agotado' : '+ Agregar'}
-            </button>
-          </div>
+          {/* ZONA DE AGREGAR (SOLO SI ESTÁ ACTIVO) */}
+          {isActive ? (
+            <div className="flex gap-2">
+              <input 
+                type="number" 
+                min="1" 
+                max={product.stock_quantity}
+                value={qtyToAdd}
+                onChange={handleQtyChange}
+                onBlur={() => { if (qtyToAdd === "") setQtyToAdd(1); }}
+                disabled={product.stock_quantity === 0}
+                className="w-14 border border-gray-400 bg-white text-gray-900 font-bold rounded text-center text-sm focus:ring-2 focus:ring-black focus:outline-none placeholder-gray-500 shadow-sm"
+              />
+              <button 
+                onClick={() => {
+                  onAddToCart(product, Number(qtyToAdd) || 1);
+                  setQtyToAdd(1); 
+                }}
+                disabled={product.stock_quantity === 0}
+                className="flex-1 bg-black text-white py-1.5 rounded-lg text-xs font-bold hover:bg-gray-800 disabled:opacity-50 disabled:cursor-not-allowed active:scale-95 transition shadow-sm"
+              >
+                {product.stock_quantity === 0 ? 'Agotado' : '+ Agregar'}
+              </button>
+            </div>
+          ) : (
+            <div className="text-center text-xs text-gray-400 py-1.5 font-medium bg-gray-100 rounded">
+              No disponible para venta
+            </div>
+          )}
         </div>
       </div>
     </div>
   );
 }
+
 // ==========================================
-// 2. COMPONENTE: TICKET MODAL (CORREGIDO NaN)
+// 2. COMPONENTE: TICKET MODAL (SIN CAMBIOS)
 // ==========================================
 function TicketModal({ sale, onClose }) {
   if (!sale) return null;
@@ -116,7 +132,6 @@ function TicketModal({ sale, onClose }) {
         {/* LISTA DE PRODUCTOS */}
         <div className="w-full space-y-2 mb-4 text-gray-800">
           {sale.items.map((item, idx) => {
-            // CORRECCIÓN CLAVE: Buscamos 'cartQuantity' O 'quantity'
             const qty = item.cartQuantity || item.quantity || 0;
             const price = Number(item.price) || 0;
             const totalItem = (qty * price).toFixed(2);
@@ -156,6 +171,7 @@ function TicketModal({ sale, onClose }) {
     </div>
   );
 }
+
 // ==========================================
 // 3. COMPONENTE PRINCIPAL (HOME)
 // ==========================================
@@ -171,8 +187,11 @@ export default function Home() {
   const [cart, setCart] = useState([]); 
   const [isProcessing, setIsProcessing] = useState(false);
   
-  // NUEVO: Estado para guardar la última venta y mostrar el ticket
+  // Estado para el ticket
   const [lastSale, setLastSale] = useState(null);
+
+  // NUEVO: Estado para filtrar archivados
+  const [showArchived, setShowArchived] = useState(false);
 
   useEffect(() => {
     const checkUser = async () => {
@@ -181,17 +200,30 @@ export default function Home() {
         router.push('/login');
       } else {
         setUser(session.user);
-        fetchProducts();
+        fetchProducts(); // Cargar productos al iniciar
       }
     };
     checkUser();
-  }, [router]);
+  }, [router, showArchived]); // Recargamos si cambiamos de pestaña (Disponibles/Archivados)
 
+  // --- FETCH MEJORADO CON FILTRO ---
   const fetchProducts = async () => {
-    const { data } = await supabase
+    setLoading(true);
+    let query = supabase
       .from('products')
       .select('*')
       .order('created_at', { ascending: false });
+
+    // Lógica del filtro:
+    if (!showArchived) {
+      // Si estamos en la pestaña normal, solo traemos los activos (is_active = true)
+      query = query.eq('is_active', true);
+    } else {
+      // Si estamos en la papelera, traemos solo los inactivos (is_active = false)
+      query = query.eq('is_active', false);
+    }
+
+    const { data } = await query;
     if (data) setProducts(data);
     setLoading(false);
   };
@@ -201,20 +233,34 @@ export default function Home() {
     router.push('/login');
   };
 
-  const handleDelete = async (id) => {
-    if (!window.confirm("¿Seguro que quieres borrar este producto?")) return;
-    const { error } = await supabase.from('products').delete().eq('id', id);
-    if (!error) setProducts(products.filter(p => p.id !== id));
+  // --- NUEVA FUNCIÓN: ARCHIVAR/REACTIVAR (Soft Delete) ---
+  const toggleProductStatus = async (product) => {
+    const action = product.is_active ? "ARCHIVAR" : "REACTIVAR";
+    const confirmMessage = product.is_active 
+      ? `¿Seguro que quieres OCULTAR "${product.name}"?\n\nNo se borrará, se moverá a la pestaña de Archivados y podrás recuperarlo después.`
+      : `¿Deseas REACTIVAR "${product.name}" para venderlo de nuevo?`;
+
+    if (!window.confirm(confirmMessage)) return;
+
+    const { error } = await supabase
+      .from('products')
+      .update({ is_active: !product.is_active }) // Invertimos el estado
+      .eq('id', product.id);
+
+    if (!error) {
+       // Recargar la lista para que desaparezca/aparezca
+       fetchProducts();
+    } else {
+       alert("Error al actualizar: " + error.message);
+    }
   };
 
-  // --- LÓGICA ACTUALIZADA DEL CARRITO ---
-  // Ahora recibe 'quantity' (cantidad) desde la tarjeta
+  // --- LÓGICA DEL CARRITO (IGUAL) ---
   const addToCart = (product, quantity) => {
     setCart(currentCart => {
       const existingItem = currentCart.find(item => item.id === product.id);
       
       if (existingItem) {
-        // Verificar stock total
         if ((existingItem.cartQuantity + quantity) > product.stock_quantity) {
           alert(`¡Solo hay ${product.stock_quantity} disponibles!`);
           return currentCart;
@@ -240,7 +286,7 @@ export default function Home() {
 
   const cartTotal = cart.reduce((total, item) => total + (item.price * item.cartQuantity), 0);
 
-  // --- LÓGICA ACTUALIZADA DE VENTA ---
+  // --- LÓGICA DE VENTA (IGUAL) ---
   const processSale = async () => {
     if (cart.length === 0) return;
     setIsProcessing(true);
@@ -248,7 +294,7 @@ export default function Home() {
     try {
       const { data: saleData, error: saleError } = await supabase
         .from('sales')
-        .insert([{ total: cartTotal, user_email: user?.email }])
+        .insert([{ total: cartTotal, user_email: user?.email }]) // Asegúrate que la columna user_email exista, si no usa user_id
         .select()
         .single();
 
@@ -264,13 +310,13 @@ export default function Home() {
         }]);
 
         const newStock = item.stock_quantity - item.cartQuantity;
+        // Aquí actualizamos el stock. NOTA: No tocamos is_active, sigue igual.
         await supabase.from('products').update({ stock_quantity: newStock }).eq('id', item.id);
       }
 
-      // EN LUGAR DE ALERT, GUARDAMOS LA VENTA PARA EL TICKET
       setLastSale({
         ...saleData,
-        items: [...cart] // Guardamos copia de los items vendidos para mostrarlos
+        items: [...cart]
       });
 
       setCart([]);
@@ -296,7 +342,7 @@ export default function Home() {
       <div className="flex-1">
         <header className="mb-6 flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
         
-        {/* PARTE IZQUIERDA: Título y Usuario (La que me pasaste) */}
+        {/* TITULO Y USUARIO */}
         <div>
           <h1 className="text-3xl font-bold text-gray-900 tracking-tight">Inventario JANCLI</h1>
           <div className="flex items-center gap-2 text-sm text-gray-500 mt-1">
@@ -305,7 +351,7 @@ export default function Home() {
           </div>
         </div>
 
-        {/* PARTE DERECHA: Buscador + Botones de Acción */}
+        {/* BUSCADOR Y BOTONES */}
         <div className="flex flex-col sm:flex-row gap-3 w-full md:w-auto">
           <input 
             type="text" 
@@ -314,7 +360,6 @@ export default function Home() {
             onChange={(e) => setSearchTerm(e.target.value)}
           />
 
-          {/* --- AQUÍ ESTÁ EL NUEVO BOTÓN DASHBOARD --- */}
           <Link 
             href="/dashboard" 
             className="bg-white text-gray-700 border border-gray-300 px-4 py-2 rounded-lg hover:bg-gray-100 transition font-medium shadow-sm whitespace-nowrap text-sm flex items-center justify-center gap-2"
@@ -329,19 +374,37 @@ export default function Home() {
             + Nuevo
           </Link>
         </div>
-      </header>
+        </header>
 
+        {/* --- PESTAÑAS DE FILTRO --- */}
+        <div className="flex gap-4 mb-6 border-b border-gray-200 pb-0">
+          <button 
+            onClick={() => setShowArchived(false)}
+            className={`text-sm font-bold pb-3 px-2 border-b-2 transition ${!showArchived ? 'text-black border-black' : 'text-gray-400 border-transparent hover:text-gray-600'}`}
+          >
+            📦 Disponibles
+          </button>
+          <button 
+            onClick={() => setShowArchived(true)}
+            className={`text-sm font-bold pb-3 px-2 border-b-2 transition ${showArchived ? 'text-black border-black' : 'text-gray-400 border-transparent hover:text-gray-600'}`}
+          >
+            🗄️ Archivados (Papelera)
+          </button>
+        </div>
+
+        {/* LISTA DE PRODUCTOS */}
         {filteredProducts.length === 0 ? (
-          <div className="text-center py-20 bg-white rounded-xl border border-dashed border-gray-300 text-gray-400">Sin productos.</div>
+          <div className="text-center py-20 bg-white rounded-xl border border-dashed border-gray-300 text-gray-400">
+            {showArchived ? "La papelera está vacía." : "No se encontraron productos disponibles."}
+          </div>
         ) : (
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
-            {/* AQUÍ USAMOS EL NUEVO COMPONENTE "ProductCard" */}
             {filteredProducts.map((product) => (
               <ProductCard 
                 key={product.id} 
                 product={product} 
                 onAddToCart={addToCart} 
-                onDelete={handleDelete}
+                onToggleStatus={toggleProductStatus} // Usamos la nueva función
                 onImageClick={setSelectedImage}
               />
             ))}
@@ -349,7 +412,7 @@ export default function Home() {
         )}
       </div>
 
-      {/* DERECHA: CARRITO */}
+      {/* DERECHA: CARRITO (IGUAL) */}
       <div className="w-full md:w-80 bg-white rounded-xl shadow-xl border border-gray-200 p-5 h-fit sticky top-4 flex flex-col z-20">
         <h2 className="text-xl font-bold mb-4 flex items-center gap-2 border-b pb-2 border-gray-100">🛒 Carrito</h2>
         
@@ -386,14 +449,14 @@ export default function Home() {
         </div>
       </div>
 
-      {/* MODAL ZOOM (FOTO) */}
+      {/* MODAL ZOOM */}
       {selectedImage && (
         <div className="fixed inset-0 bg-black/90 z-50 flex items-center justify-center p-4" onClick={() => setSelectedImage(null)}>
           <img src={selectedImage} className="max-h-[85vh] max-w-full rounded-lg" />
         </div>
       )}
 
-      {/* MODAL TICKET (EL RECIBO AL FINAL) */}
+      {/* MODAL TICKET */}
       <TicketModal sale={lastSale} onClose={() => setLastSale(null)} />
 
     </div>

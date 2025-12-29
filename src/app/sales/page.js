@@ -5,7 +5,7 @@ import { supabase } from '@/lib/supabase';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 
-// --- MODAL DEL TICKET (Ahora con botón de Cancelar) ---
+// --- MODAL DEL TICKET ---
 function TicketModal({ sale, onClose, onCancel }) {
   if (!sale) return null;
 
@@ -15,7 +15,7 @@ function TicketModal({ sale, onClose, onCancel }) {
     <div className="fixed inset-0 bg-black/80 z-50 flex items-center justify-center p-4 backdrop-blur-sm animate-in fade-in">
       <div className="bg-white w-full max-w-sm rounded-lg shadow-2xl p-6 relative flex flex-col items-center font-mono text-sm">
         
-        {/* Encabezado del Ticket */}
+        {/* Encabezado */}
         <div className={`w-12 h-12 rounded-full flex items-center justify-center mb-4 text-2xl ${isCancelled ? 'bg-red-100 text-red-600' : 'bg-green-100 text-green-600'}`}>
           {isCancelled ? '✕' : '✓'}
         </div>
@@ -27,7 +27,7 @@ function TicketModal({ sale, onClose, onCancel }) {
         
         <div className="w-full border-t border-dashed border-gray-300 my-2"></div>
 
-        {/* Lista de Productos */}
+        {/* Productos */}
         <div className="w-full space-y-2 mb-4 text-gray-800 opacity-90">
           {sale.items?.map((item, idx) => (
             <div key={idx} className={`flex justify-between ${isCancelled ? 'line-through text-gray-400' : ''}`}>
@@ -45,7 +45,7 @@ function TicketModal({ sale, onClose, onCancel }) {
           <span>${Number(sale.total).toFixed(2)}</span>
         </div>
 
-        {/* Botones de Acción */}
+        {/* Botones */}
         <button onClick={onClose} className="w-full bg-black text-white py-3 rounded-lg font-bold hover:bg-gray-800 transition mb-2">
           Cerrar
         </button>
@@ -58,7 +58,7 @@ function TicketModal({ sale, onClose, onCancel }) {
             
             <button 
               onClick={() => {
-                if(confirm('¿Seguro que quieres CANCELAR esta venta? El stock se devolverá al inventario.')) {
+                if(confirm('ATENCIÓN: ¿Seguro que quieres CANCELAR esta venta?\n\nLas prendas se devolverán al inventario automáticamente.')) {
                   onCancel(sale);
                 }
               }} 
@@ -99,7 +99,7 @@ export default function SalesHistory() {
     fetchSales();
   }, [router]);
 
-  // Abrir ticket y cargar sus items
+  // Abrir ticket
   const openTicket = async (sale) => {
     const { data: items } = await supabase
       .from('sale_items')
@@ -108,32 +108,53 @@ export default function SalesHistory() {
     setSelectedSale({ ...sale, items: items || [] });
   };
 
-  // --- LÓGICA DE CANCELACIÓN (Aquí ocurre la magia) ---
+  // --- LÓGICA DE CANCELACIÓN (PRODUCCIÓN) ---
   const handleCancelSale = async (saleToCancel) => {
     try {
       setLoading(true);
-      
+
+      // ⚠️ AQUÍ ESTÁ LA CORRECCIÓN CLAVE: Usamos 'stock_quantity'
+      const NOMBRE_COLUMNA_STOCK = 'stock_quantity';
+
       // 1. Devolver el Stock (Iterar producto por producto)
       for (const item of saleToCancel.items) {
-        // Obtenemos stock actual
-        const { data: productData } = await supabase
+        const productId = item.product_id; 
+
+        if (!productId) {
+            console.error("Item sin ID:", item);
+            continue; // Saltamos si hay un error en este item
+        }
+
+        // Paso A: Leer cuánto hay ahorita
+        const { data: productData, error: errProduct } = await supabase
           .from('products')
-          .select('stock')
-          .eq('id', item.product_id) // Asumiendo que guardaste product_id en sale_items
+          .select(NOMBRE_COLUMNA_STOCK) 
+          .eq('id', productId)
           .single();
 
-        if (productData) {
-          const newStock = productData.stock + item.quantity;
-          
-          // Actualizamos el producto
-          await supabase
-            .from('products')
-            .update({ stock: newStock })
-            .eq('id', item.product_id);
+        if (errProduct) {
+          console.error(`Error leyendo producto ${productId}:`, errProduct);
+          // No detenemos todo, intentamos con el siguiente producto
+          continue;
         }
+
+        // Paso B: Sumar
+        const stockActual = productData[NOMBRE_COLUMNA_STOCK]; 
+        const newStock = Number(stockActual) + Number(item.quantity);
+
+        // Paso C: Guardar dinámicamente
+        const updateData = {};
+        updateData[NOMBRE_COLUMNA_STOCK] = newStock;
+
+        const { error: updateError } = await supabase
+          .from('products')
+          .update(updateData)
+          .eq('id', productId);
+          
+        if (updateError) console.error("Error devolviendo stock:", updateError);
       }
 
-      // 2. Marcar la venta como CANCELADA en la base de datos
+      // 2. Marcar venta como cancelada
       const { error } = await supabase
         .from('sales')
         .update({ status: 'cancelado' })
@@ -141,13 +162,13 @@ export default function SalesHistory() {
 
       if (error) throw error;
 
-      alert('Venta cancelada exitosamente. El stock ha sido devuelto.');
-      setSelectedSale(null);
-      fetchSales(); // Recargar la lista
+      alert('✅ Venta cancelada exitosamente. El stock ha sido devuelto.');
+      setSelectedSale(null); // Cerrar modal
+      fetchSales(); // Recargar lista
 
     } catch (error) {
       console.error(error);
-      alert('Error al cancelar la venta. Revisa la consola.');
+      alert('Ocurrió un error al cancelar. Por favor revisa tu conexión.');
     } finally {
       setLoading(false);
     }
@@ -157,7 +178,7 @@ export default function SalesHistory() {
     sale.id.toLowerCase().includes(searchTerm.toLowerCase())
   );
 
-  if (loading) return <div className="p-10 text-center text-gray-500 font-mono animate-pulse">Procesando datos... ⏳</div>;
+  if (loading) return <div className="p-10 text-center text-gray-500 font-mono animate-pulse">Cargando historial... ⏳</div>;
 
   return (
     <div className="min-h-screen bg-gray-50 p-6 font-sans">
