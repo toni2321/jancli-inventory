@@ -4,8 +4,10 @@ import { useEffect, useState } from 'react';
 import { supabase } from '@/lib/supabase';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
+// 1. IMPORTAR TOAST
+import toast from 'react-hot-toast';
 
-// --- MODAL DEL TICKET (CON TRAZABILIDAD) ---
+// --- MODAL DEL TICKET ---
 function TicketModal({ sale, onClose, onCancel }) {
   if (!sale) return null;
 
@@ -28,12 +30,10 @@ function TicketModal({ sale, onClose, onCancel }) {
             <p className="text-gray-500 text-xs">ID: {sale.id.slice(0, 8)}</p>
             <p className="text-gray-400 text-[10px]">{new Date(sale.created_at).toLocaleString()}</p>
             
-            {/* ¿Quién vendió? */}
             <p className="text-xs text-gray-600 mt-2">
                 Vendedor: <span className="font-bold">{sale.user_email || 'Desconocido'}</span>
             </p>
 
-            {/* ¿Quién canceló? (Solo si está cancelado) */}
             {isCancelled && (
                 <div className="mt-2 bg-red-50 border border-red-100 p-2 rounded">
                     <p className="text-xs text-red-600 font-bold uppercase">Cancelado por:</p>
@@ -98,10 +98,8 @@ export default function SalesHistory() {
   const [selectedSale, setSelectedSale] = useState(null);
   const [searchTerm, setSearchTerm] = useState("");
   
-  // NUEVO: Guardamos quién está viendo la pantalla para firmar la cancelación
   const [currentUserEmail, setCurrentUserEmail] = useState("");
 
-  // Cargar ventas y usuario actual
   const fetchSales = async () => {
     const { data: { session } } = await supabase.auth.getSession();
     if (!session) {
@@ -109,7 +107,6 @@ export default function SalesHistory() {
         return;
     }
     
-    // Guardamos el email del que está conectado
     setCurrentUserEmail(session.user.email);
 
     const { data } = await supabase
@@ -125,7 +122,6 @@ export default function SalesHistory() {
     fetchSales();
   }, [router]);
 
-  // Abrir ticket
   const openTicket = async (sale) => {
     const { data: items } = await supabase
       .from('sale_items')
@@ -134,8 +130,11 @@ export default function SalesHistory() {
     setSelectedSale({ ...sale, items: items || [] });
   };
 
-  // --- LÓGICA DE CANCELACIÓN CON TRAZABILIDAD ---
+  // --- LÓGICA DE CANCELACIÓN MEJORADA CON TOAST ---
   const handleCancelSale = async (saleToCancel) => {
+    // 1. Toast de carga
+    const toastId = toast.loading("Procesando cancelación...");
+
     try {
       setLoading(true);
 
@@ -144,10 +143,8 @@ export default function SalesHistory() {
       // 1. Devolver el Stock
       for (const item of saleToCancel.items) {
         const productId = item.product_id; 
-
         if (!productId) continue;
 
-        // Leer stock actual
         const { data: productData, error: errProduct } = await supabase
           .from('products')
           .select(NOMBRE_COLUMNA_STOCK) 
@@ -156,11 +153,9 @@ export default function SalesHistory() {
 
         if (errProduct) continue;
 
-        // Sumar
         const stockActual = productData[NOMBRE_COLUMNA_STOCK]; 
         const newStock = Number(stockActual) + Number(item.quantity);
 
-        // Guardar
         const updateData = {};
         updateData[NOMBRE_COLUMNA_STOCK] = newStock;
 
@@ -170,24 +165,27 @@ export default function SalesHistory() {
           .eq('id', productId);
       }
 
-      // 2. Marcar como CANCELADO y FIRMAR QUIEN FUE
+      // 2. Marcar como CANCELADO
       const { error } = await supabase
         .from('sales')
         .update({ 
             status: 'cancelado',
-            cancelled_by: currentUserEmail // <--- AQUÍ LA TRAZABILIDAD
+            cancelled_by: currentUserEmail 
         })
         .eq('id', saleToCancel.id);
 
       if (error) throw error;
 
-      alert(`✅ Venta cancelada por: ${currentUserEmail}`);
+      // 2. Éxito
+      toast.success("Venta cancelada correctamente", { id: toastId });
+      
       setSelectedSale(null);
       fetchSales(); 
 
     } catch (error) {
       console.error(error);
-      alert('Error al cancelar.');
+      // 3. Error
+      toast.error('Error al cancelar', { id: toastId });
     } finally {
       setLoading(false);
     }

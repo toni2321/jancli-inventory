@@ -3,10 +3,10 @@
 import { useState } from 'react';
 import { supabase } from '@/lib/supabase';
 import { useRouter } from 'next/navigation';
-// 1. IMPORTAMOS EL GUARURA
 import AdminGuard from '@/components/AdminGuard';
-// 2. IMPORTAMOS LA TRITURADORA DE IMÁGENES
 import imageCompression from 'browser-image-compression';
+// 1. IMPORTAR TOAST (ESTO FALTABA)
+import toast from 'react-hot-toast';
 
 export default function NewProduct() {
   const router = useRouter();
@@ -21,7 +21,6 @@ export default function NewProduct() {
   const [showGallery, setShowGallery] = useState(false);
   const [galleryImages, setGalleryImages] = useState([]);
   const [loadingGallery, setLoadingGallery] = useState(false);
-  // Estado para mostrar que se está comprimiendo/subiendo
   const [compressing, setCompressing] = useState(false);
 
   const [formData, setFormData] = useState({
@@ -41,7 +40,7 @@ export default function NewProduct() {
       .list('', { limit: 100, offset: 0, sortBy: { column: 'created_at', order: 'desc' } });
 
     if (error) {
-      alert("Error cargando galería: " + error.message);
+      toast.error("Error cargando galería: " + error.message);
     } else {
       const imagesWithUrl = data.map(file => {
         const { data: { publicUrl } } = supabase.storage.from('products').getPublicUrl(file.name);
@@ -58,11 +57,15 @@ export default function NewProduct() {
     setPreviewUrl(url); 
     setFile(null); 
     setShowGallery(false); 
+    toast.success("Imagen seleccionada");
   };
 
   // --- 3. BORRAR IMAGEN CON PROTECCIÓN ---
   const handleDeleteImage = async (imageName, publicUrl) => {
     if(!confirm("¿Intentar borrar esta imagen?")) return;
+
+    // Toast de carga
+    const toastId = toast.loading("Verificando...");
 
     try {
       const { data: productsUsing, error: checkError } = await supabase
@@ -73,7 +76,7 @@ export default function NewProduct() {
       if (checkError) throw checkError;
 
       if (productsUsing && productsUsing.length > 0) {
-        alert(`⛔ NO SE PUEDE BORRAR.\n\nEsta imagen está siendo usada por: "${productsUsing[0].name}".`);
+        toast.error(`⛔ Usada por: "${productsUsing[0].name}"`, { id: toastId });
         return;
       }
 
@@ -81,11 +84,11 @@ export default function NewProduct() {
       
       if (deleteError) throw deleteError;
       
-      alert("✅ Imagen borrada correctamente.");
+      toast.success("Imagen borrada", { id: toastId });
       fetchGalleryImages(); 
 
     } catch (error) {
-      alert("Error verificando imagen: " + error.message);
+      toast.error("Error: " + error.message, { id: toastId });
     }
   };
 
@@ -103,6 +106,9 @@ export default function NewProduct() {
   const handleSubmit = async (e) => {
     e.preventDefault();
     setLoading(true);
+    
+    // Toast de carga inicial
+    const toastId = toast.loading("Guardando producto...");
 
     let finalImageUrl = selectedGalleryUrl; 
 
@@ -134,7 +140,7 @@ export default function NewProduct() {
         finalImageUrl = urlData.publicUrl;
 
       } catch (error) {
-        alert('Error al procesar imagen: ' + error.message);
+        toast.error('Error imagen: ' + error.message, { id: toastId });
         setLoading(false);
         setCompressing(false);
         return;
@@ -161,15 +167,15 @@ export default function NewProduct() {
       ]);
 
     if (error) {
-      alert('Error al guardar en BD: ' + error.message);
+      toast.error('Error al guardar: ' + error.message, { id: toastId });
       setLoading(false);
     } else {
+      toast.success('¡Producto Creado! 🎉', { id: toastId });
       router.push('/');
       router.refresh();
     }
   };
 
-  // --- AQUÍ ESTÁ EL CAMBIO IMPORTANTE: EL WRAPPER ---
   return (
     <AdminGuard>
       <div className="min-h-screen bg-gray-100 flex items-center justify-center p-4 font-sans">

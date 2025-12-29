@@ -3,6 +3,8 @@
 import { useState } from 'react';
 import { supabase } from '@/lib/supabase';
 import { useRouter } from 'next/navigation';
+// 1. IMPORTAR TOAST
+import toast from 'react-hot-toast';
 
 export default function Login() {
   const router = useRouter();
@@ -13,6 +15,9 @@ export default function Login() {
   const handleLogin = async (e) => {
     e.preventDefault();
     setLoading(true);
+    
+    // 2. INICIA TOAST DE CARGA
+    const toastId = toast.loading('Iniciando sesión...');
 
     const { error } = await supabase.auth.signInWithPassword({
       email,
@@ -20,10 +25,12 @@ export default function Login() {
     });
 
     if (error) {
-      alert('Error: ' + error.message);
+      // 3. SI FALLA: ERROR ROJO
+      toast.error('Error: ' + error.message, { id: toastId });
       setLoading(false);
     } else {
-      // Si el login es exitoso, nos manda al inicio
+      // 4. SI FUNCIONA: ÉXITO VERDE Y REDIRECCIÓN
+      toast.success('¡Bienvenido de nuevo!', { id: toastId });
       router.push('/');
       router.refresh();
     }

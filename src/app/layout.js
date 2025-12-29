@@ -1,7 +1,8 @@
 import { Geist, Geist_Mono } from "next/font/google";
 import "./globals.css";
-// 1. IMPORTAMOS EL TOASTER
-import { Toaster } from "react-hot-toast";
+
+// 👇 CAMBIO 1: Importamos NUESTRO componente, no la librería directa
+import ToasterProvider from "@/components/ToasterProvider"; 
 
 const geistSans = Geist({
   variable: "--font-geist-sans",
@@ -14,28 +15,18 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata = {
-  title: "Inventario JANCLI", // Aproveché para ponerle nombre a tu app
+  title: "Inventario JANCLI",
   description: "Sistema de gestión de inventario",
 };
 
 export default function RootLayout({ children }) {
   return (
-    <html lang="en">
+    <html lang="es">
       <body
         className={`${geistSans.variable} ${geistMono.variable} antialiased`}
       >
-        {/* 2. AGREGAMOS EL COMPONENTE TOASTER AQUÍ ARRIBA */}
-        <Toaster 
-          position="top-center" 
-          toastOptions={{
-            duration: 3000,
-            style: {
-              background: '#333',
-              color: '#fff',
-              borderRadius: '10px',
-            },
-          }}
-        />
+        {/* 👇 CAMBIO 2: Usamos nuestro Provider aquí */}
+        <ToasterProvider />
         
         {children}
       </body>

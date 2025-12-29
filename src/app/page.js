@@ -4,6 +4,7 @@ import { useEffect, useState } from 'react';
 import { supabase } from '@/lib/supabase';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
+import toast from 'react-hot-toast';
 
 // ==========================================
 // 1. COMPONENTE: TARJETA DE PRODUCTO
@@ -124,7 +125,7 @@ function TicketModal({ sale, onClose }) {
         <div className="w-12 h-12 bg-green-100 text-green-600 rounded-full flex items-center justify-center mb-4 text-2xl">✓</div>
         <h2 className="font-bold text-xl mb-1 text-gray-900">¡Venta Exitosa!</h2>
         <p className="text-gray-500 text-xs mb-4">ID: {sale.id.slice(0, 8)}</p>
-        <p className="text-xs text-gray-500 mb-2">Vendedor: {sale.user_email}</p> {/* Trazabilidad visual */}
+        <p className="text-xs text-gray-500 mb-2">Vendedor: {sale.user_email}</p> 
 
         <div className="w-full border-t border-dashed border-gray-300 my-2"></div>
 
@@ -164,10 +165,7 @@ export default function Home() {
   const [products, setProducts] = useState([]);
   const [loading, setLoading] = useState(true);
   const [user, setUser] = useState(null);
-  
-  // NUEVO: ROL DEL USUARIO
   const [userRole, setUserRole] = useState(null);
-
   const [selectedImage, setSelectedImage] = useState(null);
   const [searchTerm, setSearchTerm] = useState("");
   const [cart, setCart] = useState([]); 
@@ -182,8 +180,6 @@ export default function Home() {
         router.push('/login');
       } else {
         setUser(session.user);
-
-        // --- TRAEMOS EL ROL ---
         const { data: profile } = await supabase
         .from('profiles')
         .select('role')
@@ -204,7 +200,6 @@ export default function Home() {
       .select('*')
       .order('created_at', { ascending: false });
 
-    // Filtro: Solo admin puede ver archivados si quiere
     if (!showArchived) {
       query = query.eq('is_active', true);
     } else {
@@ -221,75 +216,98 @@ export default function Home() {
     router.push('/login');
   };
 
-  // --- SOLO ADMIN PUEDE ARCHIVAR ---
+  // --- SOLO ADMIN PUEDE ARCHIVAR (CON TOAST) ---
   const toggleProductStatus = async (product) => {
-    if (userRole !== 'admin') return; // Candado de seguridad
+    if (userRole !== 'admin') return;
 
-    const action = product.is_active ? "ARCHIVAR" : "REACTIVAR";
     const confirmMessage = product.is_active 
       ? `¿Seguro que quieres OCULTAR "${product.name}"?`
       : `¿Deseas REACTIVAR "${product.name}"?`;
 
     if (!window.confirm(confirmMessage)) return;
 
+    // 1. Toast de Carga
+    const toastId = toast.loading("Actualizando estado...");
+
     const { error } = await supabase
       .from('products')
       .update({ is_active: !product.is_active })
       .eq('id', product.id);
 
-    if (!error) fetchProducts();
-    else alert("Error: " + error.message);
+    if (!error) {
+       toast.success("Estado actualizado", { id: toastId });
+       fetchProducts();
+    } else {
+       toast.error("Error: " + error.message, { id: toastId });
+    }
   };
 
+  // --- AGREGAR AL CARRITO (CON TOAST) ---
   const addToCart = (product, quantity) => {
-    setCart(currentCart => {
-      const existingItem = currentCart.find(item => item.id === product.id);
+    // 1. Buscamos si ya existe (usando la variable 'cart' directa, no dentro del set)
+    const existingItem = cart.find(item => item.id === product.id);
+    
+    if (existingItem) {
+      // Validación de Stock
+      if ((existingItem.cartQuantity + quantity) > product.stock_quantity) {
+        toast.error(`¡Solo quedan ${product.stock_quantity} disponibles!`);
+        return; // Detenemos todo, no actualizamos estado
+      }
       
-      if (existingItem) {
-        if ((existingItem.cartQuantity + quantity) > product.stock_quantity) {
-          alert(`¡Solo hay ${product.stock_quantity} disponibles!`);
-          return currentCart;
-        }
-        return currentCart.map(item => 
+      // Si pasa, mostramos éxito
+      toast.success(`+${quantity} ${product.name}`);
+      
+      // Y AHORA SÍ actualizamos el estado (función pura)
+      setCart(currentCart => 
+        currentCart.map(item => 
           item.id === product.id 
             ? { ...item, cartQuantity: item.cartQuantity + quantity }
             : item
-        );
-      } else {
-        if (product.stock_quantity < quantity) {
-          alert("No hay suficiente stock");
-          return currentCart;
-        }
-        return [...currentCart, { ...product, cartQuantity: quantity }];
+        )
+      );
+
+    } else {
+      // Producto nuevo en carrito
+      if (product.stock_quantity < quantity) {
+        toast.error("No hay suficiente stock");
+        return;
       }
-    });
+
+      toast.success(`Agregado: ${product.name}`);
+      
+      // Actualizamos estado
+      setCart(currentCart => [...currentCart, { ...product, cartQuantity: quantity }]);
+    }
   };
 
+  // --- ELIMINAR DEL CARRITO (CORREGIDO) ---
   const removeFromCart = (productId) => {
-    setCart(currentCart => currentCart.filter(item => item.id !== productId));
+    toast("Producto eliminado", { icon: '🗑️' }); // El toast va PRIMERO
+    setCart(currentCart => currentCart.filter(item => item.id !== productId)); // El estado va DESPUÉS
   };
 
   const cartTotal = cart.reduce((total, item) => total + (item.price * item.cartQuantity), 0);
 
-  // --- VENTA (CUALQUIERA PUEDE VENDER, PERO REGISTRAMOS QUIEN FUE) ---
+  // --- PROCESAR VENTA (CON TOAST DE CARGA) ---
   const processSale = async () => {
     if (cart.length === 0) return;
     setIsProcessing(true);
+    
+    // 1. Inicia carga
+    const toastId = toast.loading("Procesando venta...");
 
     try {
-      // 1. Crear venta con el email del usuario actual (TRAZABILIDAD DE VENTA)
       const { data: saleData, error: saleError } = await supabase
         .from('sales')
         .insert([{ 
             total: cartTotal, 
-            user_email: user?.email // Aquí guardamos quién vendió
+            user_email: user?.email 
         }])
         .select()
         .single();
 
       if (saleError) throw saleError;
 
-      // 2. Insertar items
       for (const item of cart) {
         await supabase.from('sale_items').insert([{
           sale_id: saleData.id,
@@ -311,8 +329,12 @@ export default function Home() {
       setCart([]);
       fetchProducts();
 
+      // 2. Éxito
+      toast.success("¡Venta Exitosa!", { id: toastId });
+
     } catch (error) {
-      alert("Error: " + error.message);
+      // 3. Error
+      toast.error("Error: " + error.message, { id: toastId });
     } finally {
       setIsProcessing(false);
     }
@@ -335,7 +357,6 @@ export default function Home() {
           <h1 className="text-3xl font-bold text-gray-900 tracking-tight">Inventario JANCLI</h1>
           <div className="flex items-center gap-2 text-sm text-gray-500 mt-1">
              <span>{user?.email}</span>
-             {/* ETIQUETA DE ROL */}
              <span className={`text-[10px] font-bold px-2 py-0.5 rounded uppercase ${userRole === 'admin' ? 'bg-black text-white' : 'bg-gray-200 text-gray-700'}`}>
                {userRole || '...'}
              </span>
@@ -351,7 +372,6 @@ export default function Home() {
             onChange={(e) => setSearchTerm(e.target.value)}
           />
 
-          {/* PROTECCIÓN: SOLO ADMIN VE DASHBOARD */}
           {userRole === 'admin' && (
             <Link 
                 href="/dashboard" 
@@ -361,7 +381,6 @@ export default function Home() {
             </Link>
           )}
 
-           {/* PROTECCIÓN: SOLO ADMIN VE BOTÓN NUEVO */}
            {userRole === 'admin' && (
             <Link 
                 href="/new" 
@@ -373,7 +392,6 @@ export default function Home() {
         </div>
         </header>
 
-        {/* PROTECCIÓN: SOLO ADMIN VE PESTAÑAS DE ARCHIVADO */}
         {userRole === 'admin' ? (
             <div className="flex gap-4 mb-6 border-b border-gray-200 pb-0">
                 <button onClick={() => setShowArchived(false)} className={`text-sm font-bold pb-3 px-2 border-b-2 transition ${!showArchived ? 'text-black border-black' : 'text-gray-400 border-transparent hover:text-gray-600'}`}>📦 Disponibles</button>
@@ -396,7 +414,7 @@ export default function Home() {
                 onAddToCart={addToCart} 
                 onToggleStatus={toggleProductStatus} 
                 onImageClick={setSelectedImage}
-                userRole={userRole} // Pasamos el rol a la tarjeta
+                userRole={userRole} 
               />
             ))}
           </div>
@@ -440,7 +458,6 @@ export default function Home() {
         </div>
       </div>
 
-      {/* MODAL ZOOM */}
       {selectedImage && (
         <div className="fixed inset-0 bg-black/90 z-50 flex items-center justify-center p-4" onClick={() => setSelectedImage(null)}>
           <img src={selectedImage} className="max-h-[85vh] max-w-full rounded-lg" />

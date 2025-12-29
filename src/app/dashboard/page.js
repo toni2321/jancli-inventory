@@ -4,8 +4,9 @@ import { useEffect, useState } from 'react';
 import { supabase } from '@/lib/supabase';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
-// Importamos al Guarura
 import AdminGuard from '@/components/AdminGuard'; 
+// 1. IMPORTAR TOAST (Para avisar si falla la carga)
+import toast from 'react-hot-toast';
 
 export default function Dashboard() {
   const router = useRouter();
@@ -33,19 +34,15 @@ export default function Dashboard() {
         .order('created_at', { ascending: false });
 
       if (error) {
-        console.error("Error cargando dashboard:", error);
+        // CAMBIO: Mostrar error visual en vez de solo consola
+        toast.error("Error cargando datos: " + error.message);
       } else {
         
-        // Filtramos: Solo nos interesan las ventas que NO están canceladas para sumar dinero
+        // Filtramos: Solo nos interesan las ventas que NO están canceladas
         const validSales = sales.filter(sale => sale.status !== 'cancelado');
         
-        // Sumar dinero solo de las válidas
         const totalMoney = validSales.reduce((acc, sale) => acc + Number(sale.total), 0);
-        
-        // Contar tickets válidos
         const totalCount = validSales.length;
-
-        // Calcular promedio (ticket promedio)
         const avg = totalCount > 0 ? (totalMoney / totalCount) : 0;
 
         setStats({
@@ -54,7 +51,7 @@ export default function Dashboard() {
           ticketPromedio: avg
         });
 
-        // Guardamos las últimas 5 ventas (aquí sí mostramos todas para ver la actividad)
+        // Guardamos las últimas 5 ventas
         setRecentSales(sales.slice(0, 5));
       }
       setLoading(false);
@@ -63,15 +60,12 @@ export default function Dashboard() {
     fetchData();
   }, [router]);
 
-  // Si está cargando los datos matemáticos
   if (loading) return <div className="p-10 text-center text-gray-500">Calculando ganancias... 📈</div>;
 
-  // --- AQUÍ ESTÁ EL CAMBIO DE SEGURIDAD ---
   return (
     <AdminGuard>
       <div className="min-h-screen bg-gray-50 p-6 font-sans">
         
-        {/* HEADER SIMPLE */}
         <header className="mb-8 flex justify-between items-center">
           <div>
             <h1 className="text-3xl font-bold text-gray-900">Dashboard Financiero</h1>

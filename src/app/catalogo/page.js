@@ -2,16 +2,16 @@
 
 import { useEffect, useState } from 'react';
 import { supabase } from '@/lib/supabase';
+// 1. IMPORTAR TOAST
+import toast from 'react-hot-toast';
 
 export default function PublicCatalog() {
   const [products, setProducts] = useState([]);
   const [loading, setLoading] = useState(true);
   const [searchTerm, setSearchTerm] = useState("");
-  const [selectedCategory, setSelectedCategory] = useState("Todos");
   const [selectedImage, setSelectedImage] = useState(null);
 
   // --- 📱 CONFIGURA TU WHATSAPP AQUÍ ---
-  // Formato: CodigoPais + Numero (Ej: 5215512345678 para México)
   const TELEFONO_TIENDA = '527131080538'; 
 
   useEffect(() => {
@@ -26,8 +26,12 @@ export default function PublicCatalog() {
       .eq('is_active', true) 
       .order('created_at', { ascending: false });
 
-    if (error) console.error("Error cargando catálogo:", error);
-    else setProducts(data || []);
+    if (error) {
+      console.error("Error cargando catálogo:", error);
+      toast.error("Error cargando productos");
+    } else {
+      setProducts(data || []);
+    }
     
     setLoading(false);
   };
@@ -37,11 +41,25 @@ export default function PublicCatalog() {
     product.name.toLowerCase().includes(searchTerm.toLowerCase())
   );
 
-  // Función para generar link de WhatsApp
+  // Función para generar link de WhatsApp (MEJORADA CON TOAST)
   const handleWhatsAppOrder = (product) => {
+    // Feedback visual para el cliente
+    toast.success("Abriendo WhatsApp...", {
+      icon: '💬',
+      style: {
+        borderRadius: '10px',
+        background: '#25D366', // Color verde WhatsApp
+        color: '#fff',
+      },
+    });
+
     const text = `Hola! 👋 Me interesa este producto del catálogo: ${product.name} - $${product.price}`;
     const url = `https://wa.me/${TELEFONO_TIENDA}?text=${encodeURIComponent(text)}`;
-    window.open(url, '_blank');
+    
+    // Pequeño retraso para que se vea el toast antes de cambiar de ventana
+    setTimeout(() => {
+        window.open(url, '_blank');
+    }, 500);
   };
 
   if (loading) return (
