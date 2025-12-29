@@ -6,11 +6,11 @@ import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 
 // ==========================================
-// 1. COMPONENTE: TARJETA DE PRODUCTO (ACTUALIZADO CON ARCHIVAR)
+// 1. COMPONENTE: TARJETA DE PRODUCTO
 // ==========================================
-function ProductCard({ product, onAddToCart, onToggleStatus, onImageClick }) {
+function ProductCard({ product, onAddToCart, onToggleStatus, onImageClick, userRole }) {
   const [qtyToAdd, setQtyToAdd] = useState(1);
-  const isActive = product.is_active; // Verificamos si está activo
+  const isActive = product.is_active;
 
   const handleQtyChange = (e) => {
     const inputValue = e.target.value;
@@ -40,18 +40,21 @@ function ProductCard({ product, onAddToCart, onToggleStatus, onImageClick }) {
         ) : (
           <div className="w-full h-full flex items-center justify-center text-gray-300 text-xs">Sin Imagen</div>
         )}
-        <div className="absolute top-2 right-2 flex gap-1 z-10">
-          <Link href={`/edit/${product.id}`} className="bg-white/90 p-1.5 rounded-full shadow hover:text-blue-600 text-gray-500">✏️</Link>
-          
-          {/* BOTÓN INTELIGENTE: ARCHIVAR O REACTIVAR */}
-          <button 
-            onClick={() => onToggleStatus(product)} 
-            className={`bg-white/90 p-1.5 rounded-full shadow transition ${isActive ? 'hover:text-red-500 text-gray-500' : 'hover:text-green-600 text-green-600'}`}
-            title={isActive ? "Archivar (Papelera)" : "Reactivar"}
-          >
-            {isActive ? '🗑️' : '♻️'}
-          </button>
-        </div>
+        
+        {/* --- PROTECCIÓN: SOLO ADMIN PUEDE EDITAR O ARCHIVAR --- */}
+        {userRole === 'admin' && (
+          <div className="absolute top-2 right-2 flex gap-1 z-10">
+            <Link href={`/edit/${product.id}`} className="bg-white/90 p-1.5 rounded-full shadow hover:text-blue-600 text-gray-500">✏️</Link>
+            
+            <button 
+              onClick={() => onToggleStatus(product)} 
+              className={`bg-white/90 p-1.5 rounded-full shadow transition ${isActive ? 'hover:text-red-500 text-gray-500' : 'hover:text-green-600 text-green-600'}`}
+              title={isActive ? "Archivar" : "Reactivar"}
+            >
+              {isActive ? '🗑️' : '♻️'}
+            </button>
+          </div>
+        )}
       </div>
 
       {/* Info */}
@@ -74,14 +77,14 @@ function ProductCard({ product, onAddToCart, onToggleStatus, onImageClick }) {
             {!isActive && <span className="text-[10px] font-bold border border-gray-400 px-1 rounded text-gray-500">ARCHIVADO</span>}
           </div>
 
-          {/* ZONA DE AGREGAR (SOLO SI ESTÁ ACTIVO) */}
+          {/* ZONA DE AGREGAR */}
           {isActive ? (
             <div className="flex gap-2">
               <input 
                 type="number" 
                 min="1" 
-                max={product.stock_quantity}
-                value={qtyToAdd}
+                max={product.stock_quantity} 
+                value={qtyToAdd} 
                 onChange={handleQtyChange}
                 onBlur={() => { if (qtyToAdd === "") setQtyToAdd(1); }}
                 disabled={product.stock_quantity === 0}
@@ -110,7 +113,7 @@ function ProductCard({ product, onAddToCart, onToggleStatus, onImageClick }) {
 }
 
 // ==========================================
-// 2. COMPONENTE: TICKET MODAL (SIN CAMBIOS)
+// 2. COMPONENTE: TICKET MODAL
 // ==========================================
 function TicketModal({ sale, onClose }) {
   if (!sale) return null;
@@ -118,28 +121,21 @@ function TicketModal({ sale, onClose }) {
   return (
     <div className="fixed inset-0 bg-black/80 z-50 flex items-center justify-center p-4 backdrop-blur-sm animate-in fade-in">
       <div className="bg-white w-full max-w-sm rounded-lg shadow-2xl p-6 relative flex flex-col items-center font-mono text-sm">
-        
-        {/* Icono */}
-        <div className="w-12 h-12 bg-green-100 text-green-600 rounded-full flex items-center justify-center mb-4 text-2xl">
-          ✓
-        </div>
-
+        <div className="w-12 h-12 bg-green-100 text-green-600 rounded-full flex items-center justify-center mb-4 text-2xl">✓</div>
         <h2 className="font-bold text-xl mb-1 text-gray-900">¡Venta Exitosa!</h2>
         <p className="text-gray-500 text-xs mb-4">ID: {sale.id.slice(0, 8)}</p>
+        <p className="text-xs text-gray-500 mb-2">Vendedor: {sale.user_email}</p> {/* Trazabilidad visual */}
 
         <div className="w-full border-t border-dashed border-gray-300 my-2"></div>
 
-        {/* LISTA DE PRODUCTOS */}
         <div className="w-full space-y-2 mb-4 text-gray-800">
           {sale.items.map((item, idx) => {
             const qty = item.cartQuantity || item.quantity || 0;
             const price = Number(item.price) || 0;
-            const totalItem = (qty * price).toFixed(2);
-
             return (
               <div key={idx} className="flex justify-between">
                 <span>{qty} x {item.name}</span>
-                <span className="font-medium">${totalItem}</span>
+                <span className="font-medium">${(qty * price).toFixed(2)}</span>
               </div>
             );
           })}
@@ -147,26 +143,13 @@ function TicketModal({ sale, onClose }) {
 
         <div className="w-full border-t border-dashed border-gray-300 my-2"></div>
 
-        {/* TOTAL */}
         <div className="flex justify-between w-full font-bold text-lg mb-6 text-gray-900">
           <span>TOTAL</span>
           <span>${Number(sale.total).toFixed(2)}</span>
         </div>
 
-        <button 
-          onClick={onClose}
-          className="w-full bg-black text-white py-3 rounded-lg font-bold hover:bg-gray-800 transition"
-        >
-          Cerrar / Nueva Venta
-        </button>
-
-        <button 
-          onClick={() => window.print()}
-          className="mt-2 text-xs text-gray-400 underline hover:text-gray-600"
-        >
-          Imprimir comprobante
-        </button>
-
+        <button onClick={onClose} className="w-full bg-black text-white py-3 rounded-lg font-bold hover:bg-gray-800 transition">Cerrar / Nueva Venta</button>
+        <button onClick={() => window.print()} className="mt-2 text-xs text-gray-400 underline hover:text-gray-600">Imprimir comprobante</button>
       </div>
     </div>
   );
@@ -181,16 +164,15 @@ export default function Home() {
   const [products, setProducts] = useState([]);
   const [loading, setLoading] = useState(true);
   const [user, setUser] = useState(null);
+  
+  // NUEVO: ROL DEL USUARIO
+  const [userRole, setUserRole] = useState(null);
+
   const [selectedImage, setSelectedImage] = useState(null);
   const [searchTerm, setSearchTerm] = useState("");
-  
   const [cart, setCart] = useState([]); 
   const [isProcessing, setIsProcessing] = useState(false);
-  
-  // Estado para el ticket
   const [lastSale, setLastSale] = useState(null);
-
-  // NUEVO: Estado para filtrar archivados
   const [showArchived, setShowArchived] = useState(false);
 
   useEffect(() => {
@@ -200,13 +182,21 @@ export default function Home() {
         router.push('/login');
       } else {
         setUser(session.user);
-        fetchProducts(); // Cargar productos al iniciar
+
+        // --- TRAEMOS EL ROL ---
+        const { data: profile } = await supabase
+        .from('profiles')
+        .select('role')
+        .eq('id', session.user.id)
+        .single();
+      
+        setUserRole(profile ? profile.role : 'vendedor');
+        fetchProducts(); 
       }
     };
     checkUser();
-  }, [router, showArchived]); // Recargamos si cambiamos de pestaña (Disponibles/Archivados)
+  }, [router, showArchived]);
 
-  // --- FETCH MEJORADO CON FILTRO ---
   const fetchProducts = async () => {
     setLoading(true);
     let query = supabase
@@ -214,12 +204,10 @@ export default function Home() {
       .select('*')
       .order('created_at', { ascending: false });
 
-    // Lógica del filtro:
+    // Filtro: Solo admin puede ver archivados si quiere
     if (!showArchived) {
-      // Si estamos en la pestaña normal, solo traemos los activos (is_active = true)
       query = query.eq('is_active', true);
     } else {
-      // Si estamos en la papelera, traemos solo los inactivos (is_active = false)
       query = query.eq('is_active', false);
     }
 
@@ -233,29 +221,26 @@ export default function Home() {
     router.push('/login');
   };
 
-  // --- NUEVA FUNCIÓN: ARCHIVAR/REACTIVAR (Soft Delete) ---
+  // --- SOLO ADMIN PUEDE ARCHIVAR ---
   const toggleProductStatus = async (product) => {
+    if (userRole !== 'admin') return; // Candado de seguridad
+
     const action = product.is_active ? "ARCHIVAR" : "REACTIVAR";
     const confirmMessage = product.is_active 
-      ? `¿Seguro que quieres OCULTAR "${product.name}"?\n\nNo se borrará, se moverá a la pestaña de Archivados y podrás recuperarlo después.`
-      : `¿Deseas REACTIVAR "${product.name}" para venderlo de nuevo?`;
+      ? `¿Seguro que quieres OCULTAR "${product.name}"?`
+      : `¿Deseas REACTIVAR "${product.name}"?`;
 
     if (!window.confirm(confirmMessage)) return;
 
     const { error } = await supabase
       .from('products')
-      .update({ is_active: !product.is_active }) // Invertimos el estado
+      .update({ is_active: !product.is_active })
       .eq('id', product.id);
 
-    if (!error) {
-       // Recargar la lista para que desaparezca/aparezca
-       fetchProducts();
-    } else {
-       alert("Error al actualizar: " + error.message);
-    }
+    if (!error) fetchProducts();
+    else alert("Error: " + error.message);
   };
 
-  // --- LÓGICA DEL CARRITO (IGUAL) ---
   const addToCart = (product, quantity) => {
     setCart(currentCart => {
       const existingItem = currentCart.find(item => item.id === product.id);
@@ -286,20 +271,25 @@ export default function Home() {
 
   const cartTotal = cart.reduce((total, item) => total + (item.price * item.cartQuantity), 0);
 
-  // --- LÓGICA DE VENTA (IGUAL) ---
+  // --- VENTA (CUALQUIERA PUEDE VENDER, PERO REGISTRAMOS QUIEN FUE) ---
   const processSale = async () => {
     if (cart.length === 0) return;
     setIsProcessing(true);
 
     try {
+      // 1. Crear venta con el email del usuario actual (TRAZABILIDAD DE VENTA)
       const { data: saleData, error: saleError } = await supabase
         .from('sales')
-        .insert([{ total: cartTotal, user_email: user?.email }]) // Asegúrate que la columna user_email exista, si no usa user_id
+        .insert([{ 
+            total: cartTotal, 
+            user_email: user?.email // Aquí guardamos quién vendió
+        }])
         .select()
         .single();
 
       if (saleError) throw saleError;
 
+      // 2. Insertar items
       for (const item of cart) {
         await supabase.from('sale_items').insert([{
           sale_id: saleData.id,
@@ -310,7 +300,6 @@ export default function Home() {
         }]);
 
         const newStock = item.stock_quantity - item.cartQuantity;
-        // Aquí actualizamos el stock. NOTA: No tocamos is_active, sigue igual.
         await supabase.from('products').update({ stock_quantity: newStock }).eq('id', item.id);
       }
 
@@ -342,16 +331,18 @@ export default function Home() {
       <div className="flex-1">
         <header className="mb-6 flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
         
-        {/* TITULO Y USUARIO */}
         <div>
           <h1 className="text-3xl font-bold text-gray-900 tracking-tight">Inventario JANCLI</h1>
           <div className="flex items-center gap-2 text-sm text-gray-500 mt-1">
-             <span>Hola, {user?.email}</span>
+             <span>{user?.email}</span>
+             {/* ETIQUETA DE ROL */}
+             <span className={`text-[10px] font-bold px-2 py-0.5 rounded uppercase ${userRole === 'admin' ? 'bg-black text-white' : 'bg-gray-200 text-gray-700'}`}>
+               {userRole || '...'}
+             </span>
              <button onClick={handleLogout} className="text-red-500 font-bold hover:underline px-1">(Salir)</button>
           </div>
         </div>
 
-        {/* BUSCADOR Y BOTONES */}
         <div className="flex flex-col sm:flex-row gap-3 w-full md:w-auto">
           <input 
             type="text" 
@@ -360,39 +351,38 @@ export default function Home() {
             onChange={(e) => setSearchTerm(e.target.value)}
           />
 
-          <Link 
-            href="/dashboard" 
-            className="bg-white text-gray-700 border border-gray-300 px-4 py-2 rounded-lg hover:bg-gray-100 transition font-medium shadow-sm whitespace-nowrap text-sm flex items-center justify-center gap-2"
-          >
-            📊 Ver Ganancias
-          </Link>
+          {/* PROTECCIÓN: SOLO ADMIN VE DASHBOARD */}
+          {userRole === 'admin' && (
+            <Link 
+                href="/dashboard" 
+                className="bg-white text-gray-700 border border-gray-300 px-4 py-2 rounded-lg hover:bg-gray-100 transition font-medium shadow-sm whitespace-nowrap text-sm flex items-center justify-center gap-2"
+            >
+                📊 Ganancias
+            </Link>
+          )}
 
-          <Link 
-            href="/new" 
-            className="bg-black text-white px-4 py-2 rounded-lg hover:bg-gray-800 transition shadow-md flex items-center justify-center whitespace-nowrap text-sm"
-          >
-            + Nuevo
-          </Link>
+           {/* PROTECCIÓN: SOLO ADMIN VE BOTÓN NUEVO */}
+           {userRole === 'admin' && (
+            <Link 
+                href="/new" 
+                className="bg-black text-white px-4 py-2 rounded-lg hover:bg-gray-800 transition shadow-md flex items-center justify-center whitespace-nowrap text-sm"
+            >
+                + Nuevo
+            </Link>
+           )}
         </div>
         </header>
 
-        {/* --- PESTAÑAS DE FILTRO --- */}
-        <div className="flex gap-4 mb-6 border-b border-gray-200 pb-0">
-          <button 
-            onClick={() => setShowArchived(false)}
-            className={`text-sm font-bold pb-3 px-2 border-b-2 transition ${!showArchived ? 'text-black border-black' : 'text-gray-400 border-transparent hover:text-gray-600'}`}
-          >
-            📦 Disponibles
-          </button>
-          <button 
-            onClick={() => setShowArchived(true)}
-            className={`text-sm font-bold pb-3 px-2 border-b-2 transition ${showArchived ? 'text-black border-black' : 'text-gray-400 border-transparent hover:text-gray-600'}`}
-          >
-            🗄️ Archivados (Papelera)
-          </button>
-        </div>
+        {/* PROTECCIÓN: SOLO ADMIN VE PESTAÑAS DE ARCHIVADO */}
+        {userRole === 'admin' ? (
+            <div className="flex gap-4 mb-6 border-b border-gray-200 pb-0">
+                <button onClick={() => setShowArchived(false)} className={`text-sm font-bold pb-3 px-2 border-b-2 transition ${!showArchived ? 'text-black border-black' : 'text-gray-400 border-transparent hover:text-gray-600'}`}>📦 Disponibles</button>
+                <button onClick={() => setShowArchived(true)} className={`text-sm font-bold pb-3 px-2 border-b-2 transition ${showArchived ? 'text-black border-black' : 'text-gray-400 border-transparent hover:text-gray-600'}`}>🗄️ Archivados (Papelera)</button>
+            </div>
+        ) : (
+            <div className="mb-6 text-sm font-bold text-gray-400 uppercase tracking-widest border-b pb-2">📦 Catálogo de Venta</div>
+        )}
 
-        {/* LISTA DE PRODUCTOS */}
         {filteredProducts.length === 0 ? (
           <div className="text-center py-20 bg-white rounded-xl border border-dashed border-gray-300 text-gray-400">
             {showArchived ? "La papelera está vacía." : "No se encontraron productos disponibles."}
@@ -404,15 +394,16 @@ export default function Home() {
                 key={product.id} 
                 product={product} 
                 onAddToCart={addToCart} 
-                onToggleStatus={toggleProductStatus} // Usamos la nueva función
+                onToggleStatus={toggleProductStatus} 
                 onImageClick={setSelectedImage}
+                userRole={userRole} // Pasamos el rol a la tarjeta
               />
             ))}
           </div>
         )}
       </div>
 
-      {/* DERECHA: CARRITO (IGUAL) */}
+      {/* DERECHA: CARRITO */}
       <div className="w-full md:w-80 bg-white rounded-xl shadow-xl border border-gray-200 p-5 h-fit sticky top-4 flex flex-col z-20">
         <h2 className="text-xl font-bold mb-4 flex items-center gap-2 border-b pb-2 border-gray-100">🛒 Carrito</h2>
         
