@@ -3,313 +3,397 @@
 import { useState } from 'react';
 import { supabase } from '@/lib/supabase';
 import { useRouter } from 'next/navigation';
+import Link from 'next/link';
 import AdminGuard from '@/components/AdminGuard';
 import imageCompression from 'browser-image-compression';
-// 1. IMPORTAR TOAST (ESTO FALTABA)
 import toast from 'react-hot-toast';
 
 export default function NewProduct() {
   const router = useRouter();
   const [loading, setLoading] = useState(false);
   
-  // Estados para manejo de imágenes
-  const [file, setFile] = useState(null); 
-  const [previewUrl, setPreviewUrl] = useState(null); 
-  const [selectedGalleryUrl, setSelectedGalleryUrl] = useState(null); 
-
-  // Estados para la Galería Modal
-  const [showGallery, setShowGallery] = useState(false);
-  const [galleryImages, setGalleryImages] = useState([]);
-  const [loadingGallery, setLoadingGallery] = useState(false);
-  const [compressing, setCompressing] = useState(false);
-
+  // --- DATOS DEL PRODUCTO PADRE ---
+  const [mainImage, setMainImage] = useState(null);
+  const [mainPreview, setMainPreview] = useState(null);
   const [formData, setFormData] = useState({
     name: '',
     price: '',
-    stock: '',
-    talla: '',
-    color: ''
+    description: ''
   });
 
-  // --- 1. CARGAR GALERÍA ---
-  const fetchGalleryImages = async () => {
-    setLoadingGallery(true);
-    const { data, error } = await supabase
-      .storage
-      .from('products')
-      .list('', { limit: 100, offset: 0, sortBy: { column: 'created_at', order: 'desc' } });
+  // --- DATOS PARA LA NUEVA VARIANTE ---
+  const [tempVariant, setTempVariant] = useState({
+    size: 'UNITALLA',
+    color: '',
+    stock: '',
+    imageFile: null,
+    previewUrl: null
+  });
 
-    if (error) {
-      toast.error("Error cargando galería: " + error.message);
-    } else {
-      const imagesWithUrl = data.map(file => {
-        const { data: { publicUrl } } = supabase.storage.from('products').getPublicUrl(file.name);
-        return { ...file, publicUrl };
+  const [variantsList, setVariantsList] = useState([]);
+
+  // 1. Manejo de Foto Principal
+  const handleMainImageChange = async (e) => {
+    const file = e.target.files[0];
+    if (file) {
+      setMainImage(file);
+      setMainPreview(URL.createObjectURL(file));
+    }
+  };
+
+  // 2. Manejo de Foto de Variante
+  const handleVariantImageChange = async (e) => {
+    const file = e.target.files[0];
+    if (file) {
+      setTempVariant({
+        ...tempVariant,
+        imageFile: file,
+        previewUrl: URL.createObjectURL(file)
       });
-      setGalleryImages(imagesWithUrl);
-    }
-    setLoadingGallery(false);
-  };
-
-  // --- 2. SELECCIONAR DE GALERÍA ---
-  const handleSelectFromGallery = (url) => {
-    setSelectedGalleryUrl(url); 
-    setPreviewUrl(url); 
-    setFile(null); 
-    setShowGallery(false); 
-    toast.success("Imagen seleccionada");
-  };
-
-  // --- 3. BORRAR IMAGEN CON PROTECCIÓN ---
-  const handleDeleteImage = async (imageName, publicUrl) => {
-    if(!confirm("¿Intentar borrar esta imagen?")) return;
-
-    // Toast de carga
-    const toastId = toast.loading("Verificando...");
-
-    try {
-      const { data: productsUsing, error: checkError } = await supabase
-        .from('products')
-        .select('name')
-        .eq('image_url', publicUrl);
-
-      if (checkError) throw checkError;
-
-      if (productsUsing && productsUsing.length > 0) {
-        toast.error(`⛔ Usada por: "${productsUsing[0].name}"`, { id: toastId });
-        return;
-      }
-
-      const { error: deleteError } = await supabase.storage.from('products').remove([imageName]);
-      
-      if (deleteError) throw deleteError;
-      
-      toast.success("Imagen borrada", { id: toastId });
-      fetchGalleryImages(); 
-
-    } catch (error) {
-      toast.error("Error: " + error.message, { id: toastId });
     }
   };
 
-  // --- 4. MANEJO DE ARCHIVO LOCAL ---
-  const handleLocalFileChange = async (e) => {
-    const selectedFile = e.target.files[0];
-    if (selectedFile) {
-      setPreviewUrl(URL.createObjectURL(selectedFile));
-      setFile(selectedFile);
-      setSelectedGalleryUrl(null);
+  // 3. Agregar Variante a la Lista
+  const addVariantToList = () => {
+    if (!tempVariant.color || !tempVariant.stock) {
+      toast.error("Falta color o stock");
+      return;
     }
+
+    setVariantsList([
+      ...variantsList,
+      { ...tempVariant, id: Date.now() }
+    ]);
+
+    setTempVariant({
+      size: 'UNITALLA',
+      color: '',
+      stock: '',
+      imageFile: null,
+      previewUrl: null
+    });
+    
+    toast.success("Variante agregada");
   };
 
-  // --- 5. SUBIR Y GUARDAR PRODUCTO ---
+  // 4. Quitar Variante
+  const removeVariant = (idToRemove) => {
+    setVariantsList(variantsList.filter(v => v.id !== idToRemove));
+  };
+
+  // --- 5. GUARDADO FINAL ---
   const handleSubmit = async (e) => {
     e.preventDefault();
-    setLoading(true);
     
-    // Toast de carga inicial
-    const toastId = toast.loading("Guardando producto...");
-
-    let finalImageUrl = selectedGalleryUrl; 
-
-    // A. Si hay archivo nuevo -> COMPRIMIR Y SUBIR
-    if (file) {
-      setCompressing(true);
-      try {
-        const options = {
-          maxSizeMB: 0.5,
-          maxWidthOrHeight: 1200,
-          useWebWorker: true,
-        };
-
-        const compressedFile = await imageCompression(file, options);
-        const fileName = `${Date.now()}-${file.name}`;
-        
-        const { error: uploadError } = await supabase
-          .storage
-          .from('products')
-          .upload(fileName, compressedFile);
-
-        if (uploadError) throw uploadError;
-
-        const { data: urlData } = supabase
-          .storage
-          .from('products')
-          .getPublicUrl(fileName);
-        
-        finalImageUrl = urlData.publicUrl;
-
-      } catch (error) {
-        toast.error('Error imagen: ' + error.message, { id: toastId });
-        setLoading(false);
-        setCompressing(false);
-        return;
-      }
-      setCompressing(false);
+    if (variantsList.length === 0) {
+      toast.error("Debes agregar al menos una variante (talla/color)");
+      return;
     }
 
-    // B. Guardar en BD
-    const { error } = await supabase
-      .from('products')
-      .insert([
-        {
+    if (!formData.name || !formData.price) {
+        toast.error("Falta nombre o precio del producto");
+        return;
+    }
+
+    setLoading(true);
+    const toastId = toast.loading("Creando producto...");
+
+    try {
+      // A. SUBIR FOTO PRINCIPAL
+      let mainImageUrl = null;
+      if (mainImage) {
+        toast.loading("Subiendo portada...", { id: toastId });
+        mainImageUrl = await uploadImage(mainImage);
+      }
+
+      // B. CREAR PRODUCTO PADRE
+      const { data: productData, error: productError } = await supabase
+        .from('products')
+        .insert([{
           organization_id: '8e946838-e3c5-4d67-ae6a-5a3de423eaf8', 
           name: formData.name,
+          description: formData.description,
           price: Number(formData.price),
-          stock_quantity: Number(formData.stock),
-          image_url: finalImageUrl, 
-          attributes: {
-            talla: formData.talla,
-            color: formData.color
-          },
-          is_active: true 
-        }
-      ]);
+          image_url: mainImageUrl,
+          is_active: true
+        }])
+        .select()
+        .single();
 
-    if (error) {
-      toast.error('Error al guardar: ' + error.message, { id: toastId });
-      setLoading(false);
-    } else {
-      toast.success('¡Producto Creado! 🎉', { id: toastId });
+      if (productError) throw productError;
+      const productId = productData.id;
+
+      // C. PROCESAR VARIANTES
+      toast.loading(`Guardando ${variantsList.length} variantes...`, { id: toastId });
+
+      for (const variant of variantsList) {
+        let variantImageUrl = null;
+        if (variant.imageFile) {
+          variantImageUrl = await uploadImage(variant.imageFile);
+        }
+
+        const { data: variantData, error: variantError } = await supabase
+          .from('product_variants')
+          .insert([{
+            product_id: productId,
+            size: variant.size,
+            color: variant.color,
+            variant_image_url: variantImageUrl,
+            stock: 0 
+          }])
+          .select()
+          .single();
+
+        if (variantError) throw variantError;
+
+        // KARDEX INICIAL
+        await supabase.from('inventory_movements').insert([{
+            variant_id: variantData.id,
+            movement_type: 'conteo_inicial',
+            quantity: Number(variant.stock),
+            reason: 'Inventario Inicial',
+            user_email: 'admin@jancli.com' 
+        }]);
+
+        // ACTUALIZAR STOCK
+        await supabase.from('product_variants')
+            .update({ stock: Number(variant.stock) })
+            .eq('id', variantData.id);
+      }
+
+      toast.success("¡Producto creado con éxito!", { id: toastId });
       router.push('/');
       router.refresh();
+
+    } catch (error) {
+      console.error(error);
+      toast.error("Error: " + error.message, { id: toastId });
+      setLoading(false);
     }
+  };
+
+  const uploadImage = async (file) => {
+    const options = { maxSizeMB: 0.5, maxWidthOrHeight: 1200, useWebWorker: true };
+    const compressedFile = await imageCompression(file, options);
+    const fileName = `${Date.now()}-${Math.random().toString(36).substring(7)}-${file.name}`;
+    
+    const { error } = await supabase.storage.from('products').upload(fileName, compressedFile);
+    if (error) throw error;
+    
+    const { data } = supabase.storage.from('products').getPublicUrl(fileName);
+    return data.publicUrl;
   };
 
   return (
     <AdminGuard>
-      <div className="min-h-screen bg-gray-100 flex items-center justify-center p-4 font-sans">
-        <div className="bg-white p-8 rounded-xl shadow-lg w-full max-w-md border border-gray-200 relative">
-          <h1 className="text-2xl font-bold mb-6 text-gray-900">Registrar Producto</h1>
+      <div className="min-h-screen bg-gray-50 p-6 font-sans flex justify-center pb-20">
+        <div className="w-full max-w-5xl">
           
-          <form onSubmit={handleSubmit} className="space-y-5">
-            
-            {/* ZONA DE IMAGEN */}
-            <div className="space-y-3">
-              <label className="block text-sm font-bold text-gray-700">Foto del Producto</label>
-              
-              <div className="border-2 border-dashed border-gray-300 rounded-lg p-4 flex flex-col items-center justify-center bg-gray-50 min-h-[150px]">
-                {compressing ? (
-                  <div className="text-blue-600 font-bold animate-pulse text-sm">⚡ Comprimiendo...</div>
-                ) : previewUrl ? (
-                  <div className="relative w-full h-48">
-                    <img src={previewUrl} alt="Vista previa" className="w-full h-full object-contain rounded" />
-                    <button 
-                      type="button" 
-                      onClick={() => { setPreviewUrl(null); setFile(null); setSelectedGalleryUrl(null); }}
-                      className="absolute top-1 right-1 bg-red-500 text-white rounded-full w-6 h-6 flex items-center justify-center shadow hover:bg-red-600"
-                    >
-                      ✕
-                    </button>
-                  </div>
-                ) : (
-                  <div className="text-center text-gray-400">
-                    <p className="text-2xl mb-2">📷</p>
-                    <p className="text-xs">Sin imagen seleccionada</p>
-                  </div>
-                )}
-              </div>
+          {/* HEADER CON BOTÓN VOLVER */}
+          <div className="flex items-center justify-between mb-6">
+            <h1 className="text-2xl font-bold text-gray-900 tracking-tight">Nuevo Producto</h1>
+            <Link 
+                href="/" 
+                className="text-gray-500 hover:text-black font-medium text-sm flex items-center gap-1 transition"
+            >
+                ← Volver al inicio
+            </Link>
+          </div>
 
-              <div className="flex gap-2">
-                <label className="flex-1 cursor-pointer bg-black text-white text-center py-2 rounded-lg text-xs font-bold hover:bg-gray-800 transition shadow">
-                  Subir Nueva
-                  <input type="file" accept="image/*" onChange={handleLocalFileChange} className="hidden" />
-                </label>
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-8 items-start">
+            
+            {/* --- COLUMNA IZQUIERDA: DATOS GENERALES --- */}
+            <div className="bg-white p-8 rounded-2xl shadow-sm border border-gray-100 h-full">
+              <div className="flex items-center gap-2 mb-6">
+                <span className="bg-black text-white w-6 h-6 rounded-full flex items-center justify-center text-xs font-bold">1</span>
+                <h2 className="text-lg font-bold text-gray-800">Información General</h2>
+              </div>
+              
+              <div className="space-y-6">
+                 {/* FOTO PORTADA */}
+                 <div>
+                  <label className="block text-xs font-bold text-gray-500 uppercase mb-2 tracking-wide">Foto de Portada</label>
+                  <div className="flex items-center gap-4">
+                    <div className="h-32 w-32 bg-gray-50 rounded-xl border-2 border-dashed border-gray-200 flex items-center justify-center overflow-hidden relative hover:border-gray-400 transition cursor-pointer group">
+                      {mainPreview ? (
+                        <img src={mainPreview} className="w-full h-full object-cover" />
+                      ) : (
+                        <div className="text-center">
+                            <span className="text-2xl block mb-1">📷</span>
+                            <span className="text-[10px] text-gray-400 group-hover:text-gray-600">Subir</span>
+                        </div>
+                      )}
+                      <input type="file" onChange={handleMainImageChange} className="absolute inset-0 opacity-0 cursor-pointer" accept="image/*" />
+                    </div>
+                    <div className="text-xs text-gray-400 leading-relaxed">
+                      Esta será la imagen principal<br/>que verán tus clientes en el catálogo.
+                    </div>
+                  </div>
+                 </div>
+
+                 {/* NOMBRE */}
+                 <div>
+                   <label className="block text-xs font-bold text-gray-500 uppercase mb-1 tracking-wide">Nombre del Modelo</label>
+                   <input 
+                      type="text" 
+                      placeholder="Ej. Sudadera Polar Premium" 
+                      className="w-full border border-gray-200 bg-gray-50 p-3 rounded-lg focus:ring-2 focus:ring-black focus:bg-white outline-none transition"
+                      value={formData.name}
+                      onChange={e => setFormData({...formData, name: e.target.value})}
+                   />
+                 </div>
+
+                 {/* PRECIO */}
+                 <div>
+                   <label className="block text-xs font-bold text-gray-500 uppercase mb-1 tracking-wide">Precio ($)</label>
+                   <input 
+                      type="number" 
+                      placeholder="0.00" 
+                      className="w-full border border-gray-200 bg-gray-50 p-3 rounded-lg focus:ring-2 focus:ring-black focus:bg-white outline-none transition font-mono"
+                      value={formData.price}
+                      onChange={e => setFormData({...formData, price: e.target.value})}
+                   />
+                 </div>
+
+                 {/* DESCRIPCIÓN */}
+                 <div>
+                   <label className="block text-xs font-bold text-gray-500 uppercase mb-1 tracking-wide">Descripción (Opcional)</label>
+                   <textarea 
+                      rows="3"
+                      placeholder="Detalles de la tela, corte, cuidados..." 
+                      className="w-full border border-gray-200 bg-gray-50 p-3 rounded-lg focus:ring-2 focus:ring-black focus:bg-white outline-none text-sm transition"
+                      value={formData.description}
+                      onChange={e => setFormData({...formData, description: e.target.value})}
+                   />
+                 </div>
+              </div>
+            </div>
+
+            {/* --- COLUMNA DERECHA: VARIANTES --- */}
+            <div className="space-y-6">
+              
+              {/* FORMULARIO AGREGAR VARIANTE */}
+              <div className="bg-white p-8 rounded-2xl shadow-lg border border-gray-100 relative overflow-hidden">
+                <div className="absolute top-0 left-0 w-1 h-full bg-blue-500"></div>
+                <div className="flex items-center gap-2 mb-6">
+                    <span className="bg-blue-600 text-white w-6 h-6 rounded-full flex items-center justify-center text-xs font-bold">2</span>
+                    <h2 className="text-lg font-bold text-gray-800">Agregar Variantes</h2>
+                </div>
+                
+                <div className="grid grid-cols-2 gap-4 mb-4">
+                  <div>
+                     <label className="block text-[10px] font-bold text-gray-400 uppercase mb-1">Talla</label>
+                     <select 
+                        className="w-full border border-gray-200 p-2.5 rounded-lg text-sm bg-white focus:ring-2 focus:ring-blue-500 outline-none"
+                        value={tempVariant.size}
+                        onChange={e => setTempVariant({...tempVariant, size: e.target.value})}
+                     >
+                       <option>UNITALLA</option>
+                       <option>XCH</option>
+                       <option>CH</option>
+                       <option>M</option>
+                       <option>G</option>
+                       <option>XG</option>
+                       <option>XXG</option>
+                     </select>
+                  </div>
+                  <div>
+                     <label className="block text-[10px] font-bold text-gray-400 uppercase mb-1">Color</label>
+                     <input 
+                        type="text" 
+                        placeholder="Ej. Rojo" 
+                        className="w-full border border-gray-200 p-2.5 rounded-lg text-sm focus:ring-2 focus:ring-blue-500 outline-none"
+                        value={tempVariant.color}
+                        onChange={e => setTempVariant({...tempVariant, color: e.target.value})}
+                     />
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-2 gap-4 mb-6 items-end">
+                  <div>
+                     <label className="block text-[10px] font-bold text-gray-400 uppercase mb-1">Stock Inicial</label>
+                     <input 
+                        type="number" 
+                        placeholder="0" 
+                        className="w-full border border-gray-200 p-2.5 rounded-lg text-sm font-bold text-gray-900 focus:ring-2 focus:ring-blue-500 outline-none"
+                        value={tempVariant.stock}
+                        onChange={e => setTempVariant({...tempVariant, stock: e.target.value})}
+                     />
+                  </div>
+                  
+                  {/* FOTO ESPECÍFICA */}
+                  <div className="relative">
+                     <label className="block text-[10px] font-bold text-gray-400 uppercase mb-1">Foto (Opcional)</label>
+                     <div className="flex items-center gap-2 border border-gray-200 p-2 rounded-lg bg-gray-50 cursor-pointer relative hover:bg-gray-100 transition h-[42px]">
+                        {tempVariant.previewUrl ? (
+                           <img src={tempVariant.previewUrl} className="w-6 h-6 rounded object-cover shadow-sm" />
+                        ) : (
+                           <span className="text-gray-400 text-xs">📷</span>
+                        )}
+                        <span className="text-xs text-gray-600 truncate flex-1 font-medium">
+                          {tempVariant.imageFile ? "Lista" : "Subir Foto"}
+                        </span>
+                        <input type="file" onChange={handleVariantImageChange} className="absolute inset-0 opacity-0 cursor-pointer" accept="image/*" />
+                     </div>
+                  </div>
+                </div>
 
                 <button 
                   type="button"
-                  onClick={() => { setShowGallery(true); fetchGalleryImages(); }}
-                  className="flex-1 bg-gray-200 text-gray-800 text-center py-2 rounded-lg text-xs font-bold hover:bg-gray-300 transition shadow"
+                  onClick={addVariantToList}
+                  className="w-full bg-blue-50 text-blue-700 border border-blue-100 py-3 rounded-xl font-bold text-sm hover:bg-blue-100 hover:shadow-sm transition flex items-center justify-center gap-2"
                 >
-                  📚 Abrir Galería
+                  <span>+</span> Agregar Variante
                 </button>
               </div>
-            </div>
 
-            {/* CAMPOS DE TEXTO */}
-            <div>
-              <label className="block text-sm font-bold text-gray-700 mb-1">Nombre</label>
-              <input required type="text" className="w-full border border-gray-300 rounded-lg p-3 text-black focus:ring-2 focus:ring-black focus:outline-none" placeholder="Ej. Sudadera Polar" onChange={(e) => setFormData({...formData, name: e.target.value})} />
-            </div>
+              {/* LISTA DE VARIANTES AGREGADAS */}
+              <div className="bg-white p-6 rounded-2xl shadow-sm border border-gray-100">
+                 <h3 className="text-xs font-bold text-gray-400 uppercase tracking-wider mb-4 flex justify-between">
+                   <span>Lista de Variantes</span>
+                   <span className="bg-gray-100 text-gray-600 px-2 py-0.5 rounded-full">{variantsList.length}</span>
+                 </h3>
 
-            <div className="grid grid-cols-2 gap-4">
-              <div>
-                <label className="block text-sm font-bold text-gray-700 mb-1">Precio ($)</label>
-                <input required type="number" className="w-full border border-gray-300 rounded-lg p-3 text-black focus:ring-2 focus:ring-black focus:outline-none" placeholder="0.00" onChange={(e) => setFormData({...formData, price: e.target.value})} />
+                 {variantsList.length === 0 ? (
+                   <div className="text-center py-8 text-gray-300 text-sm border-2 border-dashed border-gray-100 rounded-xl bg-gray-50/50">
+                     Aún no hay variantes.<br/>Agrega tallas y colores arriba.
+                   </div>
+                 ) : (
+                   <div className="space-y-3 max-h-60 overflow-y-auto pr-2 custom-scrollbar">
+                      {variantsList.map((v) => (
+                        <div key={v.id} className="flex items-center justify-between p-3 bg-white rounded-xl border border-gray-100 shadow-sm hover:shadow-md transition">
+                          <div className="flex items-center gap-4">
+                             {v.previewUrl ? (
+                               <img src={v.previewUrl} className="w-10 h-10 rounded-lg object-cover border border-gray-200" />
+                             ) : (
+                               <div className="w-10 h-10 rounded-lg bg-gray-100 flex items-center justify-center text-xs text-gray-400 font-bold">Sin<br/>Foto</div>
+                             )}
+                             <div>
+                               <p className="text-sm font-bold text-gray-900">{v.color} / {v.size}</p>
+                               <p className="text-xs text-gray-500 font-mono">Stock: {v.stock}</p>
+                             </div>
+                          </div>
+                          <button onClick={() => removeVariant(v.id)} className="text-gray-300 hover:text-red-500 p-2 transition">
+                            ✕
+                          </button>
+                        </div>
+                      ))}
+                   </div>
+                 )}
               </div>
-              <div>
-                <label className="block text-sm font-bold text-gray-700 mb-1">Stock</label>
-                <input required type="number" className="w-full border border-gray-300 rounded-lg p-3 text-black focus:ring-2 focus:ring-black focus:outline-none" placeholder="0" onChange={(e) => setFormData({...formData, stock: e.target.value})} />
-              </div>
-            </div>
 
-            <div className="grid grid-cols-2 gap-4 bg-gray-50 p-4 rounded-lg border border-gray-200">
-              <div>
-                <label className="block text-xs font-bold text-gray-500 uppercase mb-2">Talla</label>
-                <select className="w-full border border-gray-300 rounded-md p-2 text-sm text-black bg-white focus:ring-2 focus:ring-black focus:outline-none" onChange={(e) => setFormData({...formData, talla: e.target.value})}>
-                  <option value="">Elegir...</option>
-                  <option value="XCH">XCH</option>
-                  <option value="CH">CH</option>
-                  <option value="M">M</option>
-                  <option value="G">G</option>
-                  <option value="XG">XG</option>
-                  <option value="UNITALLA">Unitalla</option>
-                </select>
-              </div>
-              <div>
-                <label className="block text-xs font-bold text-gray-500 uppercase mb-2">Color</label>
-                <input type="text" className="w-full border border-gray-300 rounded-md p-2 text-sm text-black focus:ring-2 focus:ring-black focus:outline-none" placeholder="Ej. Rojo" onChange={(e) => setFormData({...formData, color: e.target.value})} />
-              </div>
-            </div>
-
-            <div className="flex gap-3 pt-4">
-              <button type="button" onClick={() => router.back()} className="w-1/3 bg-white border border-gray-300 text-gray-700 py-3 rounded-lg font-bold hover:bg-gray-50 transition">Cancelar</button>
-              <button type="submit" disabled={loading} className="w-2/3 bg-black text-white py-3 rounded-lg font-bold hover:bg-gray-800 transition shadow-lg disabled:opacity-50">
-                {loading || compressing ? 'Procesando...' : 'Guardar Producto'}
+              {/* BOTÓN FINAL */}
+              <button 
+                onClick={handleSubmit}
+                disabled={loading || variantsList.length === 0}
+                className="w-full bg-black text-white py-4 rounded-xl font-bold text-lg hover:bg-gray-900 hover:shadow-xl hover:scale-[1.02] transition transform disabled:opacity-50 disabled:cursor-not-allowed disabled:transform-none"
+              >
+                {loading ? 'Guardando...' : '💾 GUARDAR PRODUCTO'}
               </button>
-            </div>
 
-          </form>
-        </div>
-
-        {/* MODAL DE GALERÍA */}
-        {showGallery && (
-          <div className="fixed inset-0 bg-black/80 z-50 flex items-center justify-center p-4 backdrop-blur-sm animate-in fade-in">
-            <div className="bg-white w-full max-w-2xl rounded-xl shadow-2xl flex flex-col max-h-[80vh]">
-              <div className="p-4 border-b flex justify-between items-center bg-gray-50 rounded-t-xl">
-                <h3 className="font-bold text-lg text-gray-800">Galería de Imágenes</h3>
-                <button onClick={() => setShowGallery(false)} className="text-gray-500 hover:text-black font-bold text-xl px-2">✕</button>
-              </div>
-
-              <div className="p-4 overflow-y-auto flex-1 custom-scrollbar">
-                {loadingGallery ? (
-                  <div className="text-center py-10 text-gray-400 animate-pulse">Cargando fotos...</div>
-                ) : galleryImages.length === 0 ? (
-                  <div className="text-center py-10 text-gray-400">No hay imágenes guardadas aún.</div>
-                ) : (
-                  <div className="grid grid-cols-3 sm:grid-cols-4 gap-3">
-                    {galleryImages.map((img) => (
-                      <div key={img.id} className="relative group aspect-square bg-gray-100 rounded-lg overflow-hidden border border-gray-200 shadow-sm hover:shadow-md transition">
-                        <img src={img.publicUrl} className="w-full h-full object-cover cursor-pointer hover:opacity-90 transition" onClick={() => handleSelectFromGallery(img.publicUrl)} alt={img.name} />
-                        <button 
-                          onClick={(e) => { e.stopPropagation(); handleDeleteImage(img.name, img.publicUrl); }}
-                          className="absolute top-1 right-1 bg-white/90 p-1.5 rounded-full text-red-500 hover:text-red-700 opacity-0 group-hover:opacity-100 transition shadow-sm"
-                          title="Borrar imagen (Si no está en uso)"
-                        >
-                          🗑️
-                        </button>
-                      </div>
-                    ))}
-                  </div>
-                )}
-              </div>
-              <div className="p-3 border-t bg-gray-50 text-xs text-gray-500 text-center rounded-b-xl">
-                Toca una foto para seleccionarla. El 🗑️ te avisará si la imagen está en uso.
-              </div>
             </div>
           </div>
-        )}
-
+        </div>
       </div>
     </AdminGuard>
   );
