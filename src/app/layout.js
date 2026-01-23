@@ -1,8 +1,9 @@
 import { Geist, Geist_Mono } from "next/font/google";
 import "./globals.css";
 
-// 👇 CAMBIO 1: Importamos NUESTRO componente, no la librería directa
-import ToasterProvider from "@/components/ToasterProvider"; 
+// 👇 Importamos tus componentes globales
+import ToasterProvider from "@/components/ToasterProvider";
+import OfflineSyncManager from "@/components/OfflineSyncManager"; // <--- NUEVO: El cerebro offline
 
 const geistSans = Geist({
   variable: "--font-geist-sans",
@@ -17,6 +18,8 @@ const geistMono = Geist_Mono({
 export const metadata = {
   title: "Inventario JANCLI",
   description: "Sistema de gestión de inventario",
+  // 👇 NUEVO: Esto permite que el navegador sepa que es una App Instalable
+  manifest: "/manifest.json", 
 };
 
 export default function RootLayout({ children }) {
@@ -25,8 +28,11 @@ export default function RootLayout({ children }) {
       <body
         className={`${geistSans.variable} ${geistMono.variable} antialiased`}
       >
-        {/* 👇 CAMBIO 2: Usamos nuestro Provider aquí */}
+        {/* Proveedor de Notificaciones (Toasts) */}
         <ToasterProvider />
+
+        {/* 👇 NUEVO: Componente invisible que sincroniza datos cuando vuelve el internet */}
+        <OfflineSyncManager />
         
         {children}
       </body>

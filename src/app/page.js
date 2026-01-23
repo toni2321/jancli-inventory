@@ -5,43 +5,39 @@ import { supabase } from '@/lib/supabase';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import toast from 'react-hot-toast';
+// 👇 1. IMPORTACIONES NUEVAS PARA EL MODO OFFLINE
+import { db, guardarVentaOffline } from '@/lib/db';
 
 // ==========================================
-// 1. COMPONENTE: TARJETA CON SELECTOR DE VARIANTES
+// 1. COMPONENTE: TARJETA (Sin cambios mayores)
 // ==========================================
 function ProductCard({ product, onAddToCart, onImageClick, userRole }) {
   const [selectedVariant, setSelectedVariant] = useState(null);
   const [selectedSize, setSelectedSize] = useState(null);
   const [qtyToAdd, setQtyToAdd] = useState(1);
 
-  // 1. Obtener tallas únicas disponibles
-  const sizes = [...new Set(product.product_variants?.map(v => v.size))].sort();
+  // Validación de seguridad por si el producto viene incompleto
+  const variants = product.product_variants || [];
+  const sizes = [...new Set(variants.map(v => v.size))].sort();
   
-  // 2. Filtrar colores disponibles según la talla seleccionada
   const availableColors = selectedSize 
-    ? product.product_variants.filter(v => v.size === selectedSize)
+    ? variants.filter(v => v.size === selectedSize)
     : [];
 
-  // 3. Manejar selección
   const handleSizeSelect = (size) => {
     setSelectedSize(size);
-    setSelectedVariant(null); // Reiniciamos variante hasta que elija color
+    setSelectedVariant(null);
   };
 
   const handleColorSelect = (variant) => {
     setSelectedVariant(variant);
   };
 
-  // 4. Determinar imagen a mostrar (La de la variante o la portada)
   const displayImage = selectedVariant?.variant_image_url || product.image_url;
-  
-  // 5. Stock actual (Solo si ya eligió todo)
   const currentStock = selectedVariant ? selectedVariant.stock : 0;
 
   return (
     <div className="bg-white rounded-xl shadow-md border border-gray-200 overflow-hidden hover:shadow-xl transition-all duration-300 flex flex-col">
-      
-      {/* IMAGEN DEL PRODUCTO */}
       <div className="h-56 relative bg-gray-100 group overflow-hidden">
         {displayImage ? (
           <img 
@@ -54,7 +50,6 @@ function ProductCard({ product, onAddToCart, onImageClick, userRole }) {
           <div className="w-full h-full flex items-center justify-center text-gray-300 text-xs">Sin Imagen</div>
         )}
         
-        {/* Botón Editar (Solo Admin) */}
         {userRole === 'admin' && (
           <Link href={`/edit/${product.id}`} className="absolute top-2 right-2 bg-white/90 p-2 rounded-full shadow-md hover:text-blue-600 text-gray-600 z-10 transition">
             ✏️
@@ -62,17 +57,13 @@ function ProductCard({ product, onAddToCart, onImageClick, userRole }) {
         )}
       </div>
 
-      {/* INFO DEL PRODUCTO */}
       <div className="p-4 flex flex-col flex-grow gap-3">
         <div>
           <h2 className="font-bold text-gray-900 text-base leading-tight mb-1">{product.name}</h2>
           <p className="text-xl font-extrabold text-gray-900">${product.price}</p>
         </div>
 
-        {/* --- SELECTORES --- */}
         <div className="space-y-3">
-          
-          {/* 1. TALLAS */}
           <div>
             <p className="text-[10px] font-bold text-gray-400 uppercase tracking-wider mb-1.5">1. Elige Talla</p>
             <div className="flex flex-wrap gap-2">
@@ -82,8 +73,8 @@ function ProductCard({ product, onAddToCart, onImageClick, userRole }) {
                   onClick={() => handleSizeSelect(size)}
                   className={`px-3 py-1.5 rounded-lg text-xs font-bold border transition-all ${
                     selectedSize === size 
-                      ? 'bg-black text-white border-black shadow-md transform scale-105' // Activo
-                      : 'bg-white text-gray-600 border-gray-200 hover:border-gray-400 hover:bg-gray-50' // Inactivo
+                      ? 'bg-black text-white border-black shadow-md transform scale-105'
+                      : 'bg-white text-gray-600 border-gray-200 hover:border-gray-400 hover:bg-gray-50'
                   }`}
                 >
                   {size}
@@ -92,7 +83,6 @@ function ProductCard({ product, onAddToCart, onImageClick, userRole }) {
             </div>
           </div>
 
-          {/* 2. COLORES (Solo aparecen si seleccionó talla) */}
           <div className={`transition-opacity duration-300 ${selectedSize ? 'opacity-100' : 'opacity-30 pointer-events-none'}`}>
             <p className="text-[10px] font-bold text-gray-400 uppercase tracking-wider mb-1.5">2. Elige Color</p>
             <div className="flex flex-wrap gap-2">
@@ -115,7 +105,6 @@ function ProductCard({ product, onAddToCart, onImageClick, userRole }) {
           </div>
         </div>
 
-        {/* FOOTER: STOCK Y BOTÓN */}
         <div className="mt-auto pt-4 border-t border-gray-100">
           <div className="flex justify-between items-center mb-3 h-5">
              {selectedVariant ? (
@@ -140,7 +129,7 @@ function ProductCard({ product, onAddToCart, onImageClick, userRole }) {
             <button 
               onClick={() => {
                 onAddToCart(product, selectedVariant, qtyToAdd);
-                setQtyToAdd(1); // Reset cantidad
+                setQtyToAdd(1);
               }}
               disabled={!selectedVariant || currentStock === 0}
               className={`flex-1 py-3 rounded-lg text-xs font-bold uppercase tracking-wide transition shadow-md ${
@@ -163,18 +152,27 @@ function ProductCard({ product, onAddToCart, onImageClick, userRole }) {
 // ==========================================
 function TicketModal({ sale, onClose }) {
   if (!sale) return null;
+  // Detectamos si fue offline revisando si tiene el campo synced
+  const isOfflineTicket = sale.synced === false; 
+
   return (
     <div className="fixed inset-0 bg-black/80 z-50 flex items-center justify-center p-4 backdrop-blur-sm animate-in fade-in">
       <div className="bg-white w-full max-w-sm rounded-lg shadow-2xl p-6 relative flex flex-col items-center font-mono text-sm">
-        <div className="w-12 h-12 bg-green-100 text-green-600 rounded-full flex items-center justify-center mb-4 text-2xl">✓</div>
-        <h2 className="font-bold text-xl mb-1 text-gray-900">¡Venta Exitosa!</h2>
-        <p className="text-gray-500 text-xs mb-4">ID: {sale.id.slice(0, 8)}</p>
+        <div className={`w-12 h-12 rounded-full flex items-center justify-center mb-4 text-2xl ${isOfflineTicket ? 'bg-yellow-100 text-yellow-600' : 'bg-green-100 text-green-600'}`}>
+            {isOfflineTicket ? '☁️' : '✓'}
+        </div>
+        <h2 className="font-bold text-xl mb-1 text-gray-900">
+            {isOfflineTicket ? 'Guardado Offline' : '¡Venta Exitosa!'}
+        </h2>
+        {isOfflineTicket && <p className="text-xs text-yellow-600 font-bold mb-2">Pendiente de sincronizar</p>}
+        
+        <p className="text-gray-500 text-xs mb-4">ID: {sale.id ? sale.id.slice(0, 8) : 'TEMP'}</p>
         
         <div className="w-full border-t border-dashed border-gray-300 my-2"></div>
         <div className="w-full space-y-2 mb-4 text-gray-800">
           {sale.items.map((item, idx) => (
             <div key={idx} className="flex justify-between">
-              <span>{item.quantity} x {item.product_name} <br/><span className="text-[10px] text-gray-500">({item.size} / {item.color})</span></span>
+              <span>{item.quantity} x {item.product_name || item.name} <br/><span className="text-[10px] text-gray-500">({item.size} / {item.color})</span></span>
               <span className="font-medium">${(item.quantity * item.price).toFixed(2)}</span>
             </div>
           ))}
@@ -211,38 +209,92 @@ export default function Home() {
 
   useEffect(() => {
     const checkUser = async () => {
+      // Intentamos obtener sesión. Si estamos offline, esto podría fallar o tardar,
+      // pero si es PWA puede que mantenga la sesión en local storage de Supabase.
       const { data: { session } } = await supabase.auth.getSession();
-      if (!session) {
+      
+      // Si no hay sesión y hay internet, login. Si no hay internet, intentamos seguir (riesgoso pero necesario)
+      if (!session && navigator.onLine) {
         router.push('/login');
       } else {
-        setUser(session.user);
-        const { data: profile } = await supabase.from('profiles').select('role').eq('id', session.user.id).single();
-        setUserRole(profile ? profile.role : 'vendedor');
+        if(session) {
+            setUser(session.user);
+            // Intentar sacar rol, si falla (offline) asumimos vendedor o leemos de caché
+            const { data: profile } = await supabase.from('profiles').select('role').eq('id', session.user.id).single();
+            setUserRole(profile ? profile.role : 'vendedor');
+        }
         fetchProducts(); 
       }
     };
     checkUser();
   }, [router, showArchived]);
 
+  // 👇 CAMBIO 2: CARGA DE PRODUCTOS HÍBRIDA (ONLINE/OFFLINE)
   const fetchProducts = async () => {
     setLoading(true);
-    // TRAEMOS PRODUCTOS Y SUS VARIANTES
-    let query = supabase
-      .from('products')
-      .select('*, product_variants(*)')
-      .order('created_at', { ascending: false });
+    
+    // A. Si hay internet: Bajamos de Supabase Y guardamos en Dexie
+    if (navigator.onLine) {
+        let query = supabase
+        .from('products')
+        .select('*, product_variants(*)')
+        .order('created_at', { ascending: false });
 
-    // Filtro de archivados (solo afecta al producto padre)
-    if (!showArchived) {
-        query = query.eq('is_active', true);
-    } else {
-        query = query.eq('is_active', false);
+        if (!showArchived) query = query.eq('is_active', true);
+        else query = query.eq('is_active', false);
+
+        const { data, error } = await query;
+
+        if (!error && data) {
+            setProducts(data);
+            
+            // GUARDAR COPIA EN CACHÉ LOCAL (DEXIE)
+            // Guardamos variantes por separado para facilitar la búsqueda offline
+            try {
+                // Limpiamos caché viejo simple (esto se puede optimizar)
+                const variantsToSave = [];
+                data.forEach(p => {
+                    if(p.product_variants) {
+                        p.product_variants.forEach(v => variantsToSave.push(v));
+                    }
+                });
+                
+                // Actualizamos Dexie
+                await db.products.bulkPut(data); // "put" sobreescribe si existe ID
+                await db.product_variants.bulkPut(variantsToSave);
+                console.log("Catálogo guardado localmente para uso offline");
+            } catch(e) {
+                console.error("Error guardando caché:", e);
+            }
+        } else {
+            toast.error("Error cargando productos");
+        }
+    } 
+    // B. Si NO hay internet: Leemos de Dexie
+    else {
+        toast("Modo Offline: Cargando catálogo local", { icon: '📡' });
+        try {
+            // Reconstruimos la estructura (Producto -> Variantes)
+            const localProducts = await db.products.toArray();
+            const localVariants = await db.product_variants.toArray();
+
+            // Unimos manualmente para que el UI funcione igual
+            const productsWithVariants = localProducts.map(p => ({
+                ...p,
+                product_variants: localVariants.filter(v => v.product_id === p.id)
+            }));
+            
+            // Filtro manual de activos/inactivos
+            const filtered = showArchived 
+                ? productsWithVariants.filter(p => p.is_active === false)
+                : productsWithVariants.filter(p => p.is_active === true);
+
+            setProducts(filtered);
+        } catch (e) {
+            console.error("Error leyendo DB local:", e);
+            toast.error("No se pudo cargar el inventario local");
+        }
     }
-
-    const { data, error } = await query;
-
-    if (error) toast.error("Error cargando productos");
-    else setProducts(data || []);
     
     setLoading(false);
   };
@@ -259,7 +311,6 @@ export default function Home() {
     }
 
     setCart(currentCart => {
-      // Verificar si ya existe esa variante exacta
       const existingItem = currentCart.find(item => item.variantId === variant.id);
       
       if (existingItem) {
@@ -298,6 +349,7 @@ export default function Home() {
     setCart(currentCart => currentCart.filter(item => item.variantId !== variantId));
   };
 
+  // 👇 CAMBIO 3: PROCESAMIENTO ROBUSTO (RPC SERVER O DEXIE LOCAL)
   const processSale = async () => {
     if (cart.length === 0) return;
     setIsProcessing(true);
@@ -305,54 +357,81 @@ export default function Home() {
 
     const cartTotal = cart.reduce((total, item) => total + (item.price * item.cartQuantity), 0);
 
+    // Preparamos el objeto de items limpio para la DB
+    const itemsPayload = cart.map(item => ({
+        variant_id: item.variantId,
+        quantity: item.cartQuantity,
+        product_name: item.name,
+        size: item.size,
+        color: item.color,
+        price: item.price
+    }));
+
     try {
-      // 1. Crear Venta
-      const { data: saleData, error: saleError } = await supabase
-        .from('sales')
-        .insert([{ total: cartTotal, user_email: user?.email }])
-        .select()
-        .single();
+      // === OPCIÓN A: ONLINE (Intentar RPC) ===
+      if (navigator.onLine) {
+          try {
+              const { data, error } = await supabase.rpc('registrar_venta_offline', {
+                  p_user_email: user?.email || 'offline_user',
+                  p_total: cartTotal,
+                  p_items: itemsPayload
+              });
 
-      if (saleError) throw saleError;
+              if (error) throw error;
 
-      // 2. Procesar Items y Movimientos
-      for (const item of cart) {
-        // Guardar detalle
-        await supabase.from('sale_items').insert([{
-          sale_id: saleData.id,
-          variant_id: item.variantId,
-          product_name: item.name,
-          size: item.size,
-          color: item.color,
-          quantity: item.cartQuantity,
-          price: item.price
-        }]);
+              // Éxito Online
+              toast.success("¡Venta registrada en Nube!", { id: toastId });
+              setLastSale({ 
+                  id: data.sale_id, 
+                  total: cartTotal, 
+                  items: cart, 
+                  synced: true,
+                  created_at: new Date().toISOString()
+              });
+              
+              // Recargamos productos para ver stock actualizado real
+              setCart([]);
+              fetchProducts();
 
-        // KARDEX: Registrar salida
-        await supabase.from('inventory_movements').insert([{
-            variant_id: item.variantId,
-            movement_type: 'venta',
-            quantity: -Math.abs(item.cartQuantity), // Negativo = Salida
-            reason: `Venta #${saleData.id.slice(0,8)}`,
-            user_email: user?.email
-        }]);
-
-        // Actualizar Stock
-        const { data: currentVar } = await supabase.from('product_variants').select('stock').eq('id', item.variantId).single();
-        const newStock = (currentVar?.stock || 0) - item.cartQuantity;
-        
-        await supabase.from('product_variants')
-            .update({ stock: newStock })
-            .eq('id', item.variantId);
+          } catch (serverError) {
+              console.error("Fallo servidor, guardando local...", serverError);
+              throw new Error("FALLBACK_LOCAL"); // Forzamos ir al catch de abajo
+          }
+      } 
+      // === OPCIÓN B: OFFLINE (Guardar en Dexie) ===
+      else {
+          throw new Error("OFFLINE_MODE");
       }
 
-      setLastSale({ ...saleData, items: [...cart] });
-      setCart([]);
-      fetchProducts();
-      toast.success("¡Venta Exitosa!", { id: toastId });
-
     } catch (error) {
-      toast.error("Error: " + error.message, { id: toastId });
+      // Si falló el servidor o no hay internet, guardamos localmente
+      if (error.message === "FALLBACK_LOCAL" || error.message === "OFFLINE_MODE" || !navigator.onLine) {
+          
+          const guardado = await guardarVentaOffline(user?.email, cartTotal, itemsPayload);
+          
+          if (guardado) {
+              toast.success("Sin internet: Guardado en dispositivo", { id: toastId, icon: '💾' });
+              
+              setLastSale({ 
+                  id: `OFF-${Date.now()}`, // ID temporal
+                  total: cartTotal, 
+                  items: cart,
+                  synced: false 
+              });
+
+              // Limpiamos carrito
+              setCart([]);
+              
+              // IMPORTANTE: Recargar productos LOCALES para ver que el stock bajó (en la copia local)
+              fetchProducts(); 
+          } else {
+              toast.error("Error crítico: No se pudo guardar la venta", { id: toastId });
+          }
+
+      } else {
+          // Error real (ej: validación de datos)
+          toast.error("Error: " + error.message, { id: toastId });
+      }
     } finally {
       setIsProcessing(false);
     }
@@ -364,7 +443,7 @@ export default function Home() {
 
   const cartTotal = cart.reduce((total, item) => total + (item.price * item.cartQuantity), 0);
 
-  if (loading) return <div className="min-h-screen bg-gray-50 flex items-center justify-center text-gray-500 animate-pulse">Cargando catálogo...</div>;
+  if (loading && products.length === 0) return <div className="min-h-screen bg-gray-50 flex items-center justify-center text-gray-500 animate-pulse">Cargando catálogo...</div>;
 
   return (
     <div className="min-h-screen bg-gray-50 p-4 md:p-8 font-sans flex flex-col md:flex-row gap-6">
@@ -373,10 +452,13 @@ export default function Home() {
       <div className="flex-1">
         <header className="mb-6 flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
           <div>
-            <h1 className="text-3xl font-bold text-gray-900 tracking-tight">Inventario JANCLI</h1>
+            <h1 className="text-3xl font-bold text-gray-900 tracking-tight flex items-center gap-2">
+                Inventario JANCLI
+                {!navigator.onLine && <span className="text-xs bg-red-100 text-red-600 px-2 py-1 rounded border border-red-200">OFFLINE</span>}
+            </h1>
             <div className="flex items-center gap-2 text-sm text-gray-500 mt-1">
-               <span>{user?.email}</span>
-               <span className="text-[10px] font-bold px-2 py-0.5 rounded uppercase bg-black text-white">{userRole}</span>
+               <span>{user?.email || 'Modo Offline'}</span>
+               <span className="text-[10px] font-bold px-2 py-0.5 rounded uppercase bg-black text-white">{userRole || 'Vendedor'}</span>
                <button onClick={handleLogout} className="text-red-500 font-bold hover:underline px-1">(Salir)</button>
             </div>
           </div>
