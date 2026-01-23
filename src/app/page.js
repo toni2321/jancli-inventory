@@ -148,7 +148,7 @@ function ProductCard({ product, onAddToCart, onImageClick, userRole }) {
 }
 
 // ==========================================
-// 2. COMPONENTE: TICKET MODAL
+// 2. COMPONENTE: TICKET MODAL (CORREGIDO)
 // ==========================================
 function TicketModal({ sale, onClose }) {
   if (!sale) return null;
@@ -170,12 +170,23 @@ function TicketModal({ sale, onClose }) {
         
         <div className="w-full border-t border-dashed border-gray-300 my-2"></div>
         <div className="w-full space-y-2 mb-4 text-gray-800">
-          {sale.items.map((item, idx) => (
-            <div key={idx} className="flex justify-between">
-              <span>{item.quantity} x {item.product_name || item.name} <br/><span className="text-[10px] text-gray-500">({item.size} / {item.color})</span></span>
-              <span className="font-medium">${(item.quantity * item.price).toFixed(2)}</span>
-            </div>
-          ))}
+          {sale.items.map((item, idx) => {
+            // 👇 CORRECCIÓN AQUÍ:
+            // Usamos item.quantity (si viene de DB) o item.cartQuantity (si viene del carrito local)
+            const qty = item.quantity || item.cartQuantity || 0;
+            const subtotal = qty * item.price;
+
+            return (
+              <div key={idx} className="flex justify-between">
+                <span>
+                  {qty} x {item.product_name || item.name} 
+                  <br/>
+                  <span className="text-[10px] text-gray-500">({item.size} / {item.color})</span>
+                </span>
+                <span className="font-medium">${subtotal.toFixed(2)}</span>
+              </div>
+            );
+          })}
         </div>
         <div className="w-full border-t border-dashed border-gray-300 my-2"></div>
         
@@ -310,38 +321,54 @@ export default function Home() {
         return;
     }
 
-    setCart(currentCart => {
-      const existingItem = currentCart.find(item => item.variantId === variant.id);
-      
-      if (existingItem) {
+    // 1. Buscamos si ya existe (usando la variable 'cart' del estado actual)
+    const existingItemIndex = cart.findIndex(item => item.variantId === variant.id);
+    const existingItem = cart[existingItemIndex];
+
+    // --- CASO A: YA EXISTE EN EL CARRITO ---
+    if (existingItem) {
+        // Validar stock antes de actualizar
         if ((existingItem.cartQuantity + quantity) > variant.stock) {
-          toast.error(`¡Solo quedan ${variant.stock} disponibles!`);
-          return currentCart;
+            toast.error(`¡Solo quedan ${variant.stock} disponibles!`);
+            return; // No hacemos nada
         }
+
+        // Si pasa la validación, mostramos el mensaje Y LUEGO actualizamos
         toast.success(`+${quantity} ${product.name}`);
-        return currentCart.map(item => 
-          item.variantId === variant.id 
-            ? { ...item, cartQuantity: item.cartQuantity + quantity }
-            : item
+        
+        setCart(currentCart => 
+            currentCart.map(item => 
+                item.variantId === variant.id 
+                    ? { ...item, cartQuantity: item.cartQuantity + quantity }
+                    : item
+            )
         );
-      } else {
+    } 
+    // --- CASO B: ES NUEVO ---
+    else {
+        // Validar stock inicial
         if (variant.stock < quantity) {
-          toast.error("No hay suficiente stock");
-          return currentCart;
+            toast.error("No hay suficiente stock");
+            return;
         }
+
+        // Mostramos mensaje Y LUEGO actualizamos
         toast.success(`Agregado: ${product.name} (${variant.size})`);
-        return [...currentCart, {
-            id: product.id,
-            variantId: variant.id,
-            name: product.name,
-            price: product.price,
-            size: variant.size,
-            color: variant.color,
-            cartQuantity: quantity,
-            image: variant.variant_image_url || product.image_url
-        }];
-      }
-    });
+        
+        setCart(currentCart => [
+            ...currentCart, 
+            {
+                id: product.id,
+                variantId: variant.id,
+                name: product.name,
+                price: product.price,
+                size: variant.size,
+                color: variant.color,
+                cartQuantity: quantity,
+                image: variant.variant_image_url || product.image_url
+            }
+        ]);
+    }
   };
 
   const removeFromCart = (variantId) => {
