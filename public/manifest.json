@@ -1,0 +1,17 @@
+{
+  "name": "Inventario JANCLI",
+  "short_name": "JANCLI",
+  "description": "Sistema de control de inventario y ventas offline",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#ffffff",
+  "theme_color": "#000000",
+  "orientation": "portrait",
+  "icons": [
+    {
+      "src": "/favicon.ico",
+      "sizes": "64x64 32x32 24x24 16x16",
+      "type": "image/x-icon"
+    }
+  ]
+}
