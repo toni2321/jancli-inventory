@@ -51,9 +51,23 @@ function ProductCard({ product, onAddToCart, onImageClick, userRole }) {
         )}
         
         {userRole === 'admin' && (
-          <Link href={`/edit/${product.id}`} className="absolute top-2 right-2 bg-white/90 p-2 rounded-full shadow-md hover:text-blue-600 text-gray-600 z-10 transition">
-            ✏️
-          </Link>
+          <div className="absolute top-2 right-2 flex gap-2 z-10">
+            {/* NUEVO BOTÓN PARA VARIANTES */}
+            <Link 
+              href={`/variants/${product.id}`} 
+              className="bg-white/90 px-3 py-1.5 rounded-full shadow-md hover:text-blue-600 text-gray-800 font-bold text-xs transition flex items-center gap-1"
+            >
+              📦 Variantes
+            </Link>
+            
+            {/* BOTÓN EDITAR ORIGINAL */}
+            <Link 
+              href={`/edit/${product.id}`} 
+              className="bg-white/90 p-1.5 rounded-full shadow-md hover:text-blue-600 text-gray-600 transition flex items-center justify-center"
+            >
+              ✏️ Editar
+            </Link>
+          </div>
         )}
       </div>
 

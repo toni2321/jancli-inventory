@@ -3,31 +3,27 @@
 import { useEffect, useState, use } from 'react';
 import { supabase } from '@/lib/supabase';
 import { useRouter } from 'next/navigation';
-// 1. IMPORTAMOS LAS MEJORAS
 import AdminGuard from '@/components/AdminGuard';
 import imageCompression from 'browser-image-compression';
 import toast from 'react-hot-toast';
 
 export default function EditProduct({ params }) {
   const router = useRouter();
-  const { id } = use(params); // Desempaquetamos el ID de la URL
+  const { id } = use(params);
 
   const [loading, setLoading] = useState(true);
   const [updating, setUpdating] = useState(false);
   const [newFile, setNewFile] = useState(null);
-  // Estado para preview inmediato de la nueva foto
   const [previewUrl, setPreviewUrl] = useState(null); 
 
+  // Estado limpio: Solo los datos base del producto
   const [formData, setFormData] = useState({
     name: '',
     price: '',
-    stock: '',
-    talla: '',
-    color: '',
     image_url: '' 
   });
 
-  // 1. Cargar datos al entrar (READ)
+  // 1. Cargar datos al entrar
   useEffect(() => {
     const fetchProduct = async () => {
       const { data, error } = await supabase
@@ -41,11 +37,8 @@ export default function EditProduct({ params }) {
         router.push('/');
       } else {
         setFormData({
-          name: data.name,
-          price: data.price,
-          stock: data.stock_quantity,
-          talla: data.attributes?.talla || '',
-          color: data.attributes?.color || '',
+          name: data.name || '',
+          price: data.price || '',
           image_url: data.image_url || null
         });
         setLoading(false);
@@ -60,16 +53,15 @@ export default function EditProduct({ params }) {
     const file = e.target.files[0];
     if (file) {
       setNewFile(file);
-      setPreviewUrl(URL.createObjectURL(file)); // Preview instantáneo
+      setPreviewUrl(URL.createObjectURL(file)); 
     }
   };
 
-  // 2. Guardar cambios (UPDATE)
+  // 2. Guardar cambios (solo tabla products)
   const handleUpdate = async (e) => {
     e.preventDefault();
     setUpdating(true);
     
-    // Toast de carga
     const toastId = toast.loading("Actualizando producto...");
 
     let finalImageUrl = formData.image_url; 
@@ -77,7 +69,6 @@ export default function EditProduct({ params }) {
     // --- LÓGICA DE IMAGEN CON COMPRESIÓN ---
     if (newFile) {
       try {
-        // A. Comprimir
         const options = {
           maxSizeMB: 0.5,
           maxWidthOrHeight: 1200,
@@ -87,7 +78,6 @@ export default function EditProduct({ params }) {
         toast.loading("Comprimiendo imagen...", { id: toastId });
         const compressedFile = await imageCompression(newFile, options);
 
-        // B. Subir
         const fileName = `updated-${Date.now()}-${newFile.name}`;
         toast.loading("Subiendo imagen...", { id: toastId });
 
@@ -98,7 +88,6 @@ export default function EditProduct({ params }) {
 
         if (uploadError) throw uploadError;
 
-        // C. Obtener URL
         const { data: urlData } = supabase
           .storage
           .from('products')
@@ -114,19 +103,16 @@ export default function EditProduct({ params }) {
     }
     // -----------------------------
 
-    // Actualizar BD
+    // Actualizar BD de forma segura
+    const updatePayload = {
+      name: formData.name,
+      price: formData.price !== '' ? Number(formData.price) : null,
+      image_url: finalImageUrl
+    };
+
     const { error } = await supabase
       .from('products')
-      .update({
-        name: formData.name,
-        price: Number(formData.price),
-        stock_quantity: Number(formData.stock),
-        image_url: finalImageUrl,
-        attributes: {
-          talla: formData.talla,
-          color: formData.color
-        }
-      })
+      .update(updatePayload)
       .eq('id', id);
 
     if (error) {
@@ -141,7 +127,6 @@ export default function EditProduct({ params }) {
 
   if (loading) return <div className="p-10 text-center animate-pulse">Cargando datos... ⏳</div>;
 
-  // 3. ENVUELTO EN ADMINGUARD 🛡️
   return (
     <AdminGuard>
       <div className="min-h-screen bg-gray-100 flex items-center justify-center p-4 font-sans">
@@ -154,7 +139,6 @@ export default function EditProduct({ params }) {
             <div className="bg-gray-50 p-4 rounded-lg border border-gray-200 text-center">
               <label className="block text-sm font-bold text-gray-700 mb-3">Imagen del Producto</label>
               
-              {/* Mostrar: Preview Nuevo O Imagen Vieja O Placeholder */}
               <div className="mb-4 flex justify-center">
                 {previewUrl ? (
                    <img src={previewUrl} alt="Nueva" className="h-32 w-32 object-cover rounded-lg border-2 border-blue-500 shadow-sm" />
@@ -168,7 +152,7 @@ export default function EditProduct({ params }) {
               <input 
                 type="file"
                 accept="image/*"
-                onChange={handleFileChange} // Usamos la nueva función
+                onChange={handleFileChange} 
                 className="w-full text-sm text-gray-500 file:mr-4 file:py-2 file:px-4 file:rounded-full file:border-0 file:text-sm file:font-semibold file:bg-black file:text-white hover:file:bg-gray-800 cursor-pointer"
               />
               <p className="text-xs text-gray-400 mt-2">
@@ -180,7 +164,6 @@ export default function EditProduct({ params }) {
             <div>
               <label className="block text-sm font-bold text-gray-700 mb-1">Nombre</label>
               <input 
-                required
                 value={formData.name}
                 onChange={(e) => setFormData({...formData, name: e.target.value})}
                 type="text" 
@@ -188,55 +171,14 @@ export default function EditProduct({ params }) {
               />
             </div>
 
-            <div className="grid grid-cols-2 gap-4">
-              <div>
-                <label className="block text-sm font-bold text-gray-700 mb-1">Precio ($)</label>
-                <input 
-                  required
-                  value={formData.price}
-                  onChange={(e) => setFormData({...formData, price: e.target.value})}
-                  type="number" 
-                  className="w-full border border-gray-300 rounded-lg p-3 text-black focus:ring-2 focus:ring-black focus:outline-none"
-                />
-              </div>
-              <div>
-                <label className="block text-sm font-bold text-gray-700 mb-1">Stock</label>
-                <input 
-                  required
-                  value={formData.stock}
-                  onChange={(e) => setFormData({...formData, stock: e.target.value})}
-                  type="number" 
-                  className="w-full border border-gray-300 rounded-lg p-3 text-black focus:ring-2 focus:ring-black focus:outline-none"
-                />
-              </div>
-            </div>
-
-            <div className="grid grid-cols-2 gap-4 bg-gray-50 p-4 rounded-lg border border-gray-200">
-              <div>
-                <label className="block text-xs font-bold text-gray-500 uppercase mb-2">Talla</label>
-                <select 
-                  value={formData.talla}
-                  onChange={(e) => setFormData({...formData, talla: e.target.value})}
-                  className="w-full border border-gray-300 rounded-md p-2 text-sm text-black bg-white focus:ring-2 focus:ring-black focus:outline-none"
-                >
-                  <option value="">Elegir...</option>
-                  <option value="XCH">XCH</option>
-                  <option value="CH">CH</option>
-                  <option value="M">M</option>
-                  <option value="G">G</option>
-                  <option value="XG">XG</option>
-                  <option value="UNITALLA">Unitalla</option>
-                </select>
-              </div>
-              <div>
-                <label className="block text-xs font-bold text-gray-500 uppercase mb-2">Color</label>
-                <input 
-                  value={formData.color}
-                  onChange={(e) => setFormData({...formData, color: e.target.value})}
-                  type="text" 
-                  className="w-full border border-gray-300 rounded-md p-2 text-sm text-black focus:ring-2 focus:ring-black focus:outline-none"
-                />
-              </div>
+            <div>
+              <label className="block text-sm font-bold text-gray-700 mb-1">Precio ($)</label>
+              <input 
+                value={formData.price}
+                onChange={(e) => setFormData({...formData, price: e.target.value})}
+                type="number" 
+                className="w-full border border-gray-300 rounded-lg p-3 text-black focus:ring-2 focus:ring-black focus:outline-none"
+              />
             </div>
 
             <div className="flex gap-3 pt-4">
