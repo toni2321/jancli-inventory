@@ -451,6 +451,7 @@ export default function Home() {
           const guardado = await guardarVentaOffline(user?.email, cartTotal, itemsPayload);
           
           if (guardado) {
+              // Ya no necesitamos el "for" aquí, porque tu lib/db.js ya lo hace de forma más segura.
               toast.success("Sin internet: Guardado en dispositivo", { id: toastId, icon: '💾' });
               
               setLastSale({ 
@@ -463,7 +464,7 @@ export default function Home() {
               // Limpiamos carrito
               setCart([]);
               
-              // IMPORTANTE: Recargar productos LOCALES para ver que el stock bajó (en la copia local)
+              // Recargamos productos LOCALES (ya vendrán con el stock descontado por tu lib/db.js)
               fetchProducts(); 
           } else {
               toast.error("Error crítico: No se pudo guardar la venta", { id: toastId });
@@ -487,7 +488,7 @@ export default function Home() {
   if (loading && products.length === 0) return <div className="min-h-screen bg-gray-50 flex items-center justify-center text-gray-500 animate-pulse">Cargando catálogo...</div>;
 
   return (
-    <div className="min-h-screen bg-gray-50 p-4 md:p-8 font-sans flex flex-col md:flex-row gap-6">
+    <div className="min-h-screen bg-gray-50 p-4 md:p-8 pb-48 md:pb-8 font-sans flex flex-col md:flex-row gap-6 relative">
       
       {/* IZQUIERDA: INVENTARIO */}
       <div className="flex-1">
@@ -546,7 +547,11 @@ export default function Home() {
       </div>
 
       {/* DERECHA: CARRITO */}
-      <div className="w-full md:w-96 bg-white rounded-xl shadow-xl border border-gray-200 p-5 h-fit sticky top-4 flex flex-col z-20">
+      <div className="
+        w-full md:w-96 bg-white shadow-[0_-10px_40px_rgba(0,0,0,0.1)] md:shadow-xl border-t md:border border-gray-200 p-5 z-40 flex flex-col
+        fixed md:sticky bottom-0 left-0 md:top-4 
+        max-h-[60vh] md:h-fit md:max-h-[none] rounded-t-3xl md:rounded-xl
+      ">
         <h2 className="text-xl font-bold mb-4 flex items-center gap-2 border-b pb-2 border-gray-100 text-gray-900">🛒 Carrito</h2>
         
         {cart.length === 0 ? (
