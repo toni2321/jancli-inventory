@@ -7,11 +7,12 @@ import Link from 'next/link';
 import AdminGuard from '@/components/AdminGuard';
 import imageCompression from 'browser-image-compression';
 import toast from 'react-hot-toast';
-
-export default function ManageVariants({ params }) {
-  const router = useRouter();
-  const { id } = use(params);
-
+// 1. Recibimos 'props' entero, sin desestructurar
+export default function ManageVariants(props) {
+  // 2. Desempaquetamos los params usando use()
+  const params = use(props.params);
+  const id = params.id;
+  
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   

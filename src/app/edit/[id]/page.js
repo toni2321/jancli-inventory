@@ -7,9 +7,10 @@ import AdminGuard from '@/components/AdminGuard';
 import imageCompression from 'browser-image-compression';
 import toast from 'react-hot-toast';
 
-export default function EditProduct({ params }) {
+export default function EditProduct(props) {
   const router = useRouter();
-  const { id } = use(params);
+  const params = use(props.params);
+  const id = params.id;
 
   const [loading, setLoading] = useState(true);
   const [updating, setUpdating] = useState(false);

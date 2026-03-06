@@ -604,6 +604,7 @@ export default function Home() {
             ))}
           </div>
         )}
+        <div className="h-[45vh] md:h-0 w-full pointer-events-none"></div>
       </div>
 
       {/* DERECHA: CARRITO */}
