@@ -1,5 +1,6 @@
 // src/lib/db.js
 import Dexie from 'dexie';
+import { supabase } from './supabase';
 
 export const db = new Dexie('JancliInventoryOffline');
 
@@ -38,4 +39,77 @@ export async function guardarVentaOffline(email, total, items) {
     console.error("Error guardando offline:", error);
     return false;
   }
+}
+
+// Contador de ventas pendientes de sincronizar
+export async function countPendingSales() {
+  try {
+    // 👇 CAMBIO: Usamos .filter() en lugar de .where()
+    const count = await db.pending_sales.filter(sale => sale.synced === false).count();
+    return count;
+  } catch (error) {
+    console.error('Error contando ventas pendientes:', error);
+    return 0;
+  }
+}
+
+// Sincroniza con Supabase todas las ventas pendientes en Dexie
+export async function syncPendingSales() {
+  // Protección básica por si se ejecuta sin navegador o sin internet
+  if (typeof navigator !== 'undefined' && !navigator.onLine) {
+    return { total: 0, success: 0, failed: 0, errors: ['Sin conexión a internet'] };
+  }
+
+  const pending = await db.pending_sales.filter(sale => sale.synced === false).toArray();
+  
+  let success = 0;
+  let failed = 0;
+  const errors = [];
+
+  for (const sale of pending) {
+    const { payload } = sale;
+
+    if (!payload) {
+      failed += 1;
+      errors.push(`Venta ${sale.id}: payload vacío`);
+      continue;
+    }
+
+    try {
+      const { user_email, total, items } = payload;
+
+      // Si en medio se pierde internet, paramos el bucle y dejamos el resto para la próxima
+      if (typeof navigator !== 'undefined' && !navigator.onLine) {
+        break;
+      }
+
+      const { error } = await supabase.rpc('registrar_venta_offline', {
+        p_user_email: user_email || 'offline_user',
+        p_total: total,
+        p_items: items
+      });
+
+      if (error) {
+        throw error;
+      }
+
+      await db.pending_sales.update(sale.id, {
+        synced: true,
+        synced_at: new Date().toISOString(),
+        last_error: null
+      });
+
+      success += 1;
+    } catch (err) {
+      failed += 1;
+      const message = err?.message || 'Error desconocido al sincronizar venta';
+      errors.push(`Venta ${sale.id}: ${message}`);
+
+      await db.pending_sales.update(sale.id, {
+        last_error: message
+      });
+    }
+  }
+
+  return { total: pending.length, success, failed, errors };
 }

@@ -1,12 +1,12 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useCallback } from 'react';
 import { supabase } from '@/lib/supabase';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import toast from 'react-hot-toast';
 // 👇 1. IMPORTACIONES NUEVAS PARA EL MODO OFFLINE
-import { db, guardarVentaOffline } from '@/lib/db';
+import { db, guardarVentaOffline, syncPendingSales, countPendingSales } from '@/lib/db';
 
 // ==========================================
 // 1. COMPONENTE: TARJETA (Sin cambios mayores)
@@ -231,6 +231,41 @@ export default function Home() {
   const [isProcessing, setIsProcessing] = useState(false);
   const [lastSale, setLastSale] = useState(null);
   const [showArchived, setShowArchived] = useState(false);
+  const [pendingOfflineCount, setPendingOfflineCount] = useState(0);
+
+  const refreshPendingOfflineCount = useCallback(async () => {
+    try {
+      const count = await countPendingSales();
+      setPendingOfflineCount(count);
+    } catch (error) {
+      console.error('Error leyendo ventas offline pendientes:', error);
+    }
+  }, []);
+
+  const syncOfflineNow = useCallback(async () => {
+    if (typeof navigator !== 'undefined' && !navigator.onLine) {
+      toast.error('No hay conexión a internet para sincronizar.');
+      return;
+    }
+
+    const toastId = toast.loading('Sincronizando ventas offline...');
+
+    const result = await syncPendingSales();
+    await refreshPendingOfflineCount();
+
+    // 👇 ESTA ES LA LÍNEA MÁGICA: Refresca el catálogo visual con el stock de la nube
+    fetchProducts();
+
+    if (result.failed === 0) {
+      toast.success(`Ventas offline sincronizadas: ${result.success}`, { id: toastId });
+    } else {
+      toast.error(
+        `Sincronización parcial: ${result.success} OK / ${result.failed} con error(es)`,
+        { id: toastId }
+      );
+      console.error('Errores al sincronizar ventas offline:', result.errors);
+    }
+  }, [refreshPendingOfflineCount]);
 
   useEffect(() => {
     const checkUser = async () => {
@@ -252,7 +287,22 @@ export default function Home() {
       }
     };
     checkUser();
-  }, [router, showArchived]);
+    refreshPendingOfflineCount();
+
+    const handleOnline = () => {
+      syncOfflineNow();
+    };
+
+    if (typeof window !== 'undefined') {
+      window.addEventListener('online', handleOnline);
+    }
+
+    return () => {
+      if (typeof window !== 'undefined') {
+        window.removeEventListener('online', handleOnline);
+      }
+    };
+  }, [router, showArchived, refreshPendingOfflineCount, syncOfflineNow]);
 
   // 👇 CAMBIO 2: CARGA DE PRODUCTOS HÍBRIDA (ONLINE/OFFLINE)
   const fetchProducts = async () => {
@@ -507,7 +557,17 @@ export default function Home() {
 
           <div className="flex flex-col sm:flex-row gap-3 w-full md:w-auto">
             <input type="text" placeholder="Buscar..." className="w-full md:w-48 border border-gray-300 rounded-lg py-2 px-3 outline-none focus:ring-2 focus:ring-black text-gray-800" onChange={(e) => setSearchTerm(e.target.value)} />
-            
+
+            {pendingOfflineCount > 0 && (
+              <button
+                type="button"
+                onClick={syncOfflineNow}
+                className="bg-yellow-100 text-yellow-800 border border-yellow-300 px-3 py-2 rounded-lg text-xs font-bold flex items-center justify-center whitespace-nowrap"
+              >
+                📡 Sync Offline ({pendingOfflineCount})
+              </button>
+            )}
+
             {userRole === 'admin' && (
               <>
                 <Link href="/dashboard" className="bg-white text-gray-700 border border-gray-300 px-4 py-2 rounded-lg hover:bg-gray-100 font-medium text-sm flex items-center justify-center whitespace-nowrap">📊 Finanzas</Link>
